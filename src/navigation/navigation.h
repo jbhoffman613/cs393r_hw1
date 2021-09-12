@@ -65,6 +65,8 @@ class Navigation {
   // Used to set the next target pose.
   void SetNavGoal(const Eigen::Vector2f& loc, float angle);
 
+  float ComputeVelocity(float current_velocity, float free_path);
+
  private:
 
   // Whether odometry has been initialized.
@@ -96,6 +98,13 @@ class Navigation {
   Eigen::Vector2f nav_goal_loc_;
   // Navigation goal angle.
   float nav_goal_angle_;
+  
+  // Current Velocity
+  float current_velocity_;
+  // Current curvature
+  float current_curvature_;
+
+  int counter;
 };
 
 }  // namespace navigation

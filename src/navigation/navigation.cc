@@ -41,6 +41,7 @@ using std::vector;
 
 using namespace math_util;
 using namespace ros_helpers;
+using namespace std;
 
 namespace {
 ros::Publisher drive_pub_;
@@ -50,6 +51,10 @@ VisualizationMsg global_viz_msg_;
 AckermannCurvatureDriveMsg drive_msg_;
 // Epsilon value for handling limited numerical precision.
 const float kEpsilon = 1e-5;
+const float acceleration = 4.0;
+const float deceleration = -4.0;
+const int hertz = 20;
+const float max_velocity = 1.0;
 } //namespace
 
 namespace navigation {
@@ -63,7 +68,10 @@ Navigation::Navigation(const string& map_file, ros::NodeHandle* n) :
     robot_omega_(0),
     nav_complete_(true),
     nav_goal_loc_(0, 0),
-    nav_goal_angle_(0) {
+    nav_goal_angle_(0),
+    current_velocity_(0),
+    current_curvature_(0),
+    counter(0) {
   drive_pub_ = n->advertise<AckermannCurvatureDriveMsg>(
       "ackermann_curvature_drive", 1);
   viz_pub_ = n->advertise<VisualizationMsg>("visualization", 1);
@@ -124,7 +132,26 @@ void Navigation::Run() {
   // Eventually, you will have to set the control values to issue drive commands:
   // drive_msg_.curvature = ...;
   // drive_msg_.velocity = ...;
-  drive_msg_.velocity = 1;
+  
+  // returned_array = get_velocity_curve(WHATEVER THE FUCK WE NEED)
+  if (counter < 100) {
+    current_velocity_ = ComputeVelocity(current_velocity_, 5.0);
+  } else {
+    current_velocity_ = ComputeVelocity(current_velocity_, 0.0);
+  }
+  // current_velocity_ = ComputeVelocity(current_velocity_, 5.0);
+  // current_curvature_ = returned_array[1]
+
+  drive_msg_.velocity = current_velocity_;
+  drive_msg_.curvature = current_curvature_;
+  counter++;
+
+  cout << point_cloud_.size() << endl;
+  for (auto i: point_cloud_) {
+    cout << "Point f: " << i(0) << " " << i(1) << endl;
+  }
+  // cout << "KILL ME!" << endl;
+
 
   // Add timestamps to all messages.
   local_viz_msg_.header.stamp = ros::Time::now();
@@ -134,6 +161,20 @@ void Navigation::Run() {
   viz_pub_.publish(local_viz_msg_);
   viz_pub_.publish(global_viz_msg_);
   drive_pub_.publish(drive_msg_);
+}
+
+float Navigation::ComputeVelocity(float current_velocity, float free_path) {
+  // Computes the next step of our 1D controller based on the current 
+  // velocity and the free path of proposed arc 
+  float minimum_distance = (-1 * (current_velocity * current_velocity)) / (2 * deceleration);
+  if (free_path <= minimum_distance) {
+    return max(0.0, current_velocity + ((1.0 / hertz) * deceleration));
+  } else if (current_velocity < max_velocity) {
+    return current_velocity + ((1.0 / hertz) * acceleration);
+  } else {
+    // We are at the max velocity
+    return current_velocity;
+  }
 }
 
 }  // namespace navigation
