@@ -84,8 +84,22 @@ void LaserCallback(const sensor_msgs::LaserScan& msg) {
   const Vector2f kLaserLoc(0.2, 0);
 
   static vector<Vector2f> point_cloud_;
+  point_cloud_.clear();
   // TODO Convert the LaserScan to a point cloud
+
+  int num_measurements = (msg.angle_max - msg.angle_min) / msg.angle_increment + 1;
+
+  for (int i = 0; i < num_measurements; i++) {
+    // converting from polar laser scan coords to cartesian
+    float r = msg.ranges[i];
+    float theta = msg.angle_min + msg.angle_increment * i;
+
+    Vector2f point(r*std::cos(theta), r*std::sin(theta));
+    point_cloud_.push_back(point);
+  }
+
   navigation_->ObservePointCloud(point_cloud_, msg.header.stamp.toSec());
+
   last_laser_msg_ = msg;
 }
 

@@ -150,7 +150,7 @@ void Navigation::Run() {
   for (auto i: point_cloud_) {
     cout << "Point f: " << i(0) << " " << i(1) << endl;
   }
-  // cout << "KILL ME!" << endl;
+  cout << "KILL ME!" << endl;
 
 
   // Add timestamps to all messages.
