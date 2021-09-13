@@ -85,7 +85,7 @@ void LaserCallback(const sensor_msgs::LaserScan& msg) {
 
   static vector<Vector2f> point_cloud_;
   point_cloud_.clear();
-  // TODO Convert the LaserScan to a point cloud
+  // TODO Convert the LaserScan to a point cloud - DONE! 
 
   int num_measurements = (msg.angle_max - msg.angle_min) / msg.angle_increment + 1;
 
