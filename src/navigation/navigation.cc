@@ -55,6 +55,14 @@ const float acceleration = 4.0;
 const float deceleration = -4.0;
 const int hertz = 20;
 const float max_velocity = 1.0;
+
+// constants in meters
+const float MARGIN = 0.2;
+const float WIDTH = 0.2 + MARGIN;
+const float LENGTH = 0.5 + MARGIN;
+const float WHEELBASE = 0.5;
+const float TRACK = 0.2;
+
 } //namespace
 
 namespace navigation {
@@ -70,7 +78,7 @@ Navigation::Navigation(const string& map_file, ros::NodeHandle* n) :
     nav_goal_loc_(0, 0),
     nav_goal_angle_(0),
     current_velocity_(0),
-    current_curvature_(0),
+    current_curvature_(0.25),
     counter(0) {
   drive_pub_ = n->advertise<AckermannCurvatureDriveMsg>(
       "ackermann_curvature_drive", 1);
@@ -132,6 +140,8 @@ void Navigation::Run() {
   // Eventually, you will have to set the control values to issue drive commands:
   // drive_msg_.curvature = ...;
   // drive_msg_.velocity = ...;
+
+  float free_path_len = FreePathLength();
   
   // returned_array = get_velocity_curve(WHATEVER THE FUCK WE NEED)
   if (counter < 100) {
@@ -146,11 +156,11 @@ void Navigation::Run() {
   drive_msg_.curvature = current_curvature_;
   counter++;
 
-  cout << point_cloud_.size() << endl;
-  for (auto i: point_cloud_) {
-    cout << "Point f: " << i(0) << " " << i(1) << endl;
-  }
-  cout << "KILL ME!" << endl;
+  // cout << point_cloud_.size() << endl;
+  // for (auto i: point_cloud_) {
+  //   cout << "Point f: " << i(0) << " " << i(1) << endl;
+  // }
+  // cout << "KILL ME!" << endl;
 
 
   // Add timestamps to all messages.
@@ -161,6 +171,38 @@ void Navigation::Run() {
   viz_pub_.publish(local_viz_msg_);
   viz_pub_.publish(global_viz_msg_);
   drive_pub_.publish(drive_msg_);
+}
+
+double Navigation::PointFreePath(const Vector2f& point) {
+
+}
+
+bool Navigation::CollisionCheck(const Vector2f& point, ) {
+
+}
+
+double Navigation::FreePathLength() {
+  if (current_curvature_ == 0) {
+    return 0;
+  }
+
+  float turning_radius = std::abs(1.0 / current_curvature_);
+  float small_radius = turning_radius - WIDTH / 2.0;
+  float mid_radius = std::sqrt(std::pow((LENGTH + WHEELBASE) / 2.0, 2) + std::pow(small_radii, 2));
+  float large_radius = std::sqrt(std::pow(turning_radius + WIDTH / 2.0, 2) + std::pow((LENGTH + WHEELBASE) / 2.0, 2));
+  float turning_center_x = 0;
+  if (current_curvature_ > 0) {
+    float turning_center_y = turning_radius;
+  } else {
+    float turning_center_y = -1 * turning_radius;
+  }
+  Vector2f turning_center(turning_center_x, turning_center_y);
+
+  for (auto point : point_cloud_) {
+    if (CollisionCheck(point, turning_center_x, turning_center_y, small_radius, large_radius)) {
+
+    }
+  }
 }
 
 float Navigation::ComputeVelocity(float current_velocity, float free_path) {
