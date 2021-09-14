@@ -65,7 +65,15 @@ class Navigation {
   // Used to set the next target pose.
   void SetNavGoal(const Eigen::Vector2f& loc, float angle);
 
+  double PointFreePath(const Eigen::Vector2f& point, const Eigen::Vector2f& turning_center, float small_radius, float mid_radius, float large_radius, float turning_radius);
+
+  bool CollisionCheck(const Eigen::Vector2f& point, const Eigen::Vector2f& turning_center, float small_radius, float large_radius);
+
+  double FreePathLength(float proposed_curvature);
+
   float ComputeVelocity(float current_velocity, float free_path);
+
+  void LatencyCompensation();
 
  private:
 
