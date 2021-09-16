@@ -20,6 +20,7 @@
 //========================================================================
 
 #include <vector>
+#include <queue>
 
 #include "eigen3/Eigen/Dense"
 
@@ -39,6 +40,11 @@ struct PathOption {
   Eigen::Vector2f obstruction;
   Eigen::Vector2f closest_point;
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+};
+
+struct Control {
+  float velocity;
+  float curvature;
 };
 
 class Navigation {
@@ -106,11 +112,14 @@ class Navigation {
   Eigen::Vector2f nav_goal_loc_;
   // Navigation goal angle.
   float nav_goal_angle_;
+
+  std::queue<struct Control> past_controls_;
   
-  // Current Velocity
-  float current_velocity_;
-  // Current curvature
-  float current_curvature_;
+  // // Current Velocity
+  // float current_velocity_;
+  // // Current curvature
+  // float current_curvature_;
+  struct Control current_control_;
 
   int counter;
 };
