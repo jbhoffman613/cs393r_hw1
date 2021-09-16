@@ -59,13 +59,15 @@ const float MAX_VELOCITY = 1.0;
 
 // constants in meters
 const float MARGIN = 0.2;
-const float WIDTH = 0.2 + MARGIN;
-const float LENGTH = 0.5 + MARGIN;
-const float WHEELBASE = 0.5;
-const float TRACK = 0.2;
-const float LATENCYVALUE = 0.1; // in seconds
+const float WIDTH = 0.28 + MARGIN; // 11 in
+const float LENGTH = 0.51 + MARGIN; // 20 
+const float WHEELBASE = 0.33; // 13 in
+const float TRACK = 0.22; // 9 in
+const float SYSTEM_LATENCY = 0.1; // in seconds
 
-const unsigned int QUEUE_LEN = ceil(LATENCYVALUE / HERTZ);
+// actuation latency = system latency * 0.75
+const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 / HERTZ);
+
 const float INITIAL_VELOCITY = 0;
 const float INITIAL_CURVATURE = 0;
 
@@ -186,11 +188,11 @@ void Navigation::LatencyCompensation() {
   control = past_controls_.front();
 
   // forward predict position
-  float turning_radius = std::abs(1.0 / control.curvature);
-  float distance_traveled = control.velocity * LATENCYVALUE;
-  float arc_length_radians = distance_traveled / turning_radius;
-  float new_x = turning_radius * std::cos(arc_length_radians);
-  float new_y = turning_radius * std::sin(arc_length_radians);
+  float turning_radius = 1.0 / control.curvature;
+  float distance_traveled = control.velocity * SYSTEM_LATENCY;
+  float arc_radians = distance_traveled / turning_radius;
+  float new_x = turning_radius * std::cos(arc_radians);
+  float new_y = turning_radius * std::sin(arc_radians);
 
   // adjust each point in the point cloud based on forward predicted position
   for (unsigned int i = 0; i < point_cloud_.size(); i++) {
