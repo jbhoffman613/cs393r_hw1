@@ -64,6 +64,7 @@ const float LENGTH = 0.51 + MARGIN; // 20 - total front to back of car
 const float WHEELBASE = 0.33; // 13 in - back axel to front axel 
 const float TRACK = 0.22; // 9 in - in between the wheels
 const float SYSTEM_LATENCY = 0.25; // in seconds - TODO
+const int CURVATURES = 5;
 
 // actuation latency = system latency * 0.75
 const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 * HERTZ);
@@ -177,6 +178,15 @@ void Navigation::Run() {
   viz_pub_.publish(local_viz_msg_);
   viz_pub_.publish(global_viz_msg_);
   drive_pub_.publish(drive_msg_);
+}
+
+vector<float> Navigation::ProposeCurvatures() {
+  vector<float> proposed_curvatures;
+  float curve_delta = 2 / (CURVATURES - 1);
+  for (int i = 0; i < CURVATURES; i++) {
+    proposed_curvatures.push_back(-1 + i*curve_delta);
+  }
+  return proposed_curvatures;
 }
 
 void Navigation::LatencyCompensation() {

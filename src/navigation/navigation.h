@@ -83,6 +83,8 @@ class Navigation {
 
   float go_straight_free_path();
 
+  std::vector<float> ProposeCurvatures();
+
  private:
 
   // Whether odometry has been initialized.
