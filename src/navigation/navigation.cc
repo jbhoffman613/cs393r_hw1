@@ -59,17 +59,17 @@ const float MAX_VELOCITY = 1.0;
 
 // constants in meters
 const float MARGIN = 0.2;
-const float WIDTH = 0.28 + MARGIN; // 11 in
-const float LENGTH = 0.51 + MARGIN; // 20 
-const float WHEELBASE = 0.33; // 13 in
-const float TRACK = 0.22; // 9 in
-const float SYSTEM_LATENCY = 0.25; // in seconds
+const float WIDTH = 0.28 + MARGIN; // 11 in - side to side of car
+const float LENGTH = 0.51 + MARGIN; // 20 - total front to back of car 
+const float WHEELBASE = 0.33; // 13 in - back axel to front axel 
+const float TRACK = 0.22; // 9 in - in between the wheels
+const float SYSTEM_LATENCY = 0.25; // in seconds - TODO
 
 // actuation latency = system latency * 0.75
 const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 * HERTZ);
 
 const float INITIAL_VELOCITY = 0;
-const float INITIAL_CURVATURE = 0.25;
+const float INITIAL_CURVATURE = 0.0;
 
 } //namespace
 
@@ -152,7 +152,8 @@ void Navigation::Run() {
 
   // TODO: pick a path and update curvature
 
-  float distance_to_goal = FreePathLength(current_control_.curvature);
+  // float distance_to_goal = FreePathLength(current_control_.curvature);
+  float distance_to_goal = go_straight_free_path();
   current_control_.velocity = ComputeVelocity(current_control_.velocity, distance_to_goal);
   
   past_controls_.push(current_control_);
@@ -191,9 +192,21 @@ void Navigation::LatencyCompensation() {
   // obtain the control issued LATENCYVALUE ago
   control = past_controls_.front();
 
+  // USED THROUGHOUT THE METHOD
+  float distance_traveled = control.velocity * SYSTEM_LATENCY;
+
+  // For when the car is going straight 
+  if (control.curvature == 0.0) {
+    for (unsigned int i = 0; i < point_cloud_.size(); i++) {
+      x = point_cloud_[i](0);
+      y = point_cloud_[i](1);
+      point_cloud_[i] = Vector2f(x - distance_traveled, y);
+    }
+    return;
+  }
+
   // forward predict position
   float turning_radius = 1.0 / control.curvature;
-  float distance_traveled = control.velocity * SYSTEM_LATENCY;
   float arc_radians = distance_traveled / turning_radius;
   float new_x = distance_traveled * std::cos(arc_radians);
   float new_y = distance_traveled * std::sin(arc_radians);
@@ -293,6 +306,28 @@ double Navigation::FreePathLength(float proposed_curvature) {
     global_min_free_path = turning_radius * M_PI * 2;
   }
   return global_min_free_path;
+}
+
+float Navigation::go_straight_free_path() {
+  // For going straight, takes all points in a point cloud and returns the distance that the 
+  // car can travel forward. 
+  
+  float new_length;
+  float global_min = 10001.0;
+  for(auto point : point_cloud_) {
+    // WE ADD IN EXTRA - TODO - MAY NEED TWEAK
+    if (point(1) >= -1 * ((WIDTH / 2) + 0.01) && point(1) <= ((WIDTH / 2)+ 0.01)) {
+      // TODO MAY NEED TO INCLUDE THE LENGTH OF THE CAR IN THE NEW LENGTH - POTENTIAL BUG
+      new_length = point(0);
+      global_min = std::min(global_min, new_length);
+    }
+  }
+
+  if (global_min >= 10000) {
+      return 20.0;
+    } else {
+      return global_min;
+    }
 }
 
 

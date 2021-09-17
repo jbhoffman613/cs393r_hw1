@@ -81,6 +81,8 @@ class Navigation {
 
   void LatencyCompensation();
 
+  float go_straight_free_path();
+
  private:
 
   // Whether odometry has been initialized.
