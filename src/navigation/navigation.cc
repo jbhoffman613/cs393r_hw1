@@ -154,7 +154,7 @@ void Navigation::Run() {
   // TODO: pick a path and update curvature
 
   // float distance_to_goal = FreePathLength(current_control_.curvature);
-  float distance_to_goal = go_straight_free_path();
+  float distance_to_goal = GoStraightFreePath();
   current_control_.velocity = ComputeVelocity(current_control_.velocity, distance_to_goal);
   
   past_controls_.push(current_control_);
@@ -318,7 +318,7 @@ double Navigation::FreePathLength(float proposed_curvature) {
   return global_min_free_path;
 }
 
-float Navigation::go_straight_free_path() {
+float Navigation::GoStraightFreePath() {
   // For going straight, takes all points in a point cloud and returns the distance that the 
   // car can travel forward. 
   
