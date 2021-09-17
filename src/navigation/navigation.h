@@ -81,9 +81,15 @@ class Navigation {
 
   void LatencyCompensation();
 
-  float go_straight_free_path();
+  float GoStraightFreePath();
 
   std::vector<float> ProposeCurvatures();
+
+  PathOption PickCurve(std::vector<float> proposed_curves);
+
+  PathOption RewardFunction(std::vector<PathOption> path_options);
+
+  float ApplyRewardFunction(PathOption option);
 
  private:
 

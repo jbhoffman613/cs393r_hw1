@@ -153,15 +153,21 @@ void Navigation::Run() {
 
   // TODO: pick a path and update curvature
 
+  vector<float> proposed_curvatures = ProposeCurvatures();
+
+  PathOption chosen_path = PickCurve(proposed_curvatures);
+
+  cout << chosen_path.curvature << ", " << chosen_path.free_path_length << endl;
+
   // float distance_to_goal = FreePathLength(current_control_.curvature);
-  float distance_to_goal = GoStraightFreePath();
-  current_control_.velocity = ComputeVelocity(current_control_.velocity, distance_to_goal);
+  // float distance_to_goal = GoStraightFreePath();
+  current_control_.velocity = ComputeVelocity(current_control_.velocity, chosen_path.free_path_length);
   
   past_controls_.push(current_control_);
 
   drive_msg_.velocity = current_control_.velocity;
-  drive_msg_.curvature = current_control_.curvature;
-  counter++;
+  // drive_msg_.curvature = current_control_.curvature;
+  drive_msg_.curvature = chosen_path.curvature;
 
 
   // Add timestamps to all messages.
@@ -182,11 +188,45 @@ void Navigation::Run() {
 
 vector<float> Navigation::ProposeCurvatures() {
   vector<float> proposed_curvatures;
-  float curve_delta = 2 / (CURVATURES - 1);
+  float curve_delta = 2.0 / (CURVATURES - 1.0);
   for (int i = 0; i < CURVATURES; i++) {
-    proposed_curvatures.push_back(-1 + i*curve_delta);
+    proposed_curvatures.push_back(-1.0 + i*curve_delta);
   }
   return proposed_curvatures;
+}
+
+PathOption Navigation::PickCurve(vector<float> proposed_curves) {
+  // using proposed_curves, create a vector of PathOptions
+  vector<PathOption> path_options;
+
+  for (auto curve : proposed_curves) {
+    PathOption new_option;
+    new_option.curvature = curve;
+    new_option.free_path_length = FreePathLength(curve);
+    path_options.push_back(new_option);
+  }
+
+  // now pick a curve based on our reward function and return
+  return RewardFunction(path_options);
+}
+
+PathOption Navigation::RewardFunction(vector<PathOption> path_options) {
+  float reward;
+  float max_reward = -100000; // very small so we can choose paths with negative reward if we have to
+  PathOption best_path;
+  for (auto option : path_options) {
+    reward = ApplyRewardFunction(option);
+    cout << "curve: " << option.curvature << ", free path: " << option.free_path_length << ", reward: " << reward << endl;
+    if (reward > max_reward) {
+      max_reward = reward;
+      best_path = option;
+    }
+  }
+  return best_path;
+}
+
+float Navigation::ApplyRewardFunction(PathOption option) {
+  return (2.0 * option.free_path_length) + (-4.0 * std::abs(option.curvature));
 }
 
 void Navigation::LatencyCompensation() {
@@ -285,7 +325,7 @@ bool Navigation::CollisionCheck(const Vector2f& point, const Vector2f& turning_c
 double Navigation::FreePathLength(float proposed_curvature) {
   // todo 
   if (proposed_curvature == 0) {
-    return 0;
+    return GoStraightFreePath();
   }
 
   // Find the turning radii necessary to compute collision
