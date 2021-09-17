@@ -69,7 +69,7 @@ const float SYSTEM_LATENCY = 0.1; // in seconds
 const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 / HERTZ);
 
 const float INITIAL_VELOCITY = 0;
-const float INITIAL_CURVATURE = 0;
+const float INITIAL_CURVATURE = 0.25;
 
 } //namespace
 
@@ -150,8 +150,6 @@ void Navigation::Run() {
 
   LatencyCompensation();
 
-  cout << QUEUE_LEN << endl;
-
   // TODO: pick a path and update curvature
 
   float distance_to_goal = FreePathLength(current_control_.curvature);
@@ -168,6 +166,12 @@ void Navigation::Run() {
   local_viz_msg_.header.stamp = ros::Time::now();
   global_viz_msg_.header.stamp = ros::Time::now();
   drive_msg_.header.stamp = ros::Time::now();
+
+  // draw the forward predicted point cloud in simulation
+  for (auto point : point_cloud_) {
+    visualization::DrawPoint(point, 0x5eeb34, local_viz_msg_);
+  }
+
   // Publish messages.
   viz_pub_.publish(local_viz_msg_);
   viz_pub_.publish(global_viz_msg_);
@@ -191,8 +195,8 @@ void Navigation::LatencyCompensation() {
   float turning_radius = 1.0 / control.curvature;
   float distance_traveled = control.velocity * SYSTEM_LATENCY;
   float arc_radians = distance_traveled / turning_radius;
-  float new_x = turning_radius * std::cos(arc_radians);
-  float new_y = turning_radius * std::sin(arc_radians);
+  float new_x = distance_traveled * std::cos(arc_radians);
+  float new_y = distance_traveled * std::sin(arc_radians);
 
   // adjust each point in the point cloud based on forward predicted position
   for (unsigned int i = 0; i < point_cloud_.size(); i++) {
