@@ -53,7 +53,7 @@ AckermannCurvatureDriveMsg drive_msg_;
 // Epsilon value for handling limited numerical precision.
 const float kEpsilon = 1e-5;
 const float ACCELERATION = 4.0;
-const float DECELERATION = -4.0;
+const float DECELERATION = -1.0;
 const int HERTZ = 20;
 const float MAX_VELOCITY = 1.0;
 
@@ -63,13 +63,13 @@ const float WIDTH = 0.28 + MARGIN; // 11 in
 const float LENGTH = 0.51 + MARGIN; // 20 
 const float WHEELBASE = 0.33; // 13 in
 const float TRACK = 0.22; // 9 in
-const float SYSTEM_LATENCY = 0.1; // in seconds
+const float SYSTEM_LATENCY = 0.25; // in seconds
 
 // actuation latency = system latency * 0.75
-const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 / HERTZ);
+const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 * HERTZ);
 
 const float INITIAL_VELOCITY = 0;
-const float INITIAL_CURVATURE = 0;
+const float INITIAL_CURVATURE = 0.25;
 
 } //namespace
 
@@ -150,7 +150,7 @@ void Navigation::Run() {
 
   LatencyCompensation();
 
-  cout << QUEUE_LEN << endl;
+  std::cout << QUEUE_LEN << std::endl;
 
   // TODO: pick a path and update curvature
 
