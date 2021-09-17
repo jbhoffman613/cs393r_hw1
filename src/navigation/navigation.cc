@@ -52,18 +52,24 @@ VisualizationMsg global_viz_msg_;
 AckermannCurvatureDriveMsg drive_msg_;
 // Epsilon value for handling limited numerical precision.
 const float kEpsilon = 1e-5;
-const float acceleration = 4.0;
-const float deceleration = -4.0;
-const int hertz = 20;
-const float max_velocity = 1.0;
+const float ACCELERATION = 4.0;
+const float DECELERATION = -1.0;
+const int HERTZ = 20;
+const float MAX_VELOCITY = 1.0;
 
 // constants in meters
 const float MARGIN = 0.2;
-const float WIDTH = 0.2 + MARGIN;
-const float LENGTH = 0.5 + MARGIN;
-const float WHEELBASE = 0.5;
-const float TRACK = 0.2;
-const float LATENCYVALUE = 0.1; // in seconds
+const float WIDTH = 0.28 + MARGIN; // 11 in
+const float LENGTH = 0.51 + MARGIN; // 20 
+const float WHEELBASE = 0.33; // 13 in
+const float TRACK = 0.22; // 9 in
+const float SYSTEM_LATENCY = 0.25; // in seconds
+
+// actuation latency = system latency * 0.75
+const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 * HERTZ);
+
+const float INITIAL_VELOCITY = 0;
+const float INITIAL_CURVATURE = 0.25;
 
 } //namespace
 
@@ -79,8 +85,6 @@ Navigation::Navigation(const string& map_file, ros::NodeHandle* n) :
     nav_complete_(true),
     nav_goal_loc_(0, 0),
     nav_goal_angle_(0),
-    current_velocity_(0),
-    current_curvature_(0.25),
     counter(0) {
   drive_pub_ = n->advertise<AckermannCurvatureDriveMsg>(
       "ackermann_curvature_drive", 1);
@@ -90,6 +94,7 @@ Navigation::Navigation(const string& map_file, ros::NodeHandle* n) :
   global_viz_msg_ = visualization::NewVisualizationMessage(
       "map", "navigation_global");
   InitRosHeader("base_link", &drive_msg_.header);
+  current_control_ = {INITIAL_VELOCITY, INITIAL_CURVATURE}; // initialize current velocity and curvature to 0
 }
 
 void Navigation::SetNavGoal(const Vector2f& loc, float angle) {
@@ -145,12 +150,15 @@ void Navigation::Run() {
 
   LatencyCompensation();
 
-  current_curvature_ = 0.25;
-  float distance_to_goal = FreePathLength(current_curvature_);
-  current_velocity_ = ComputeVelocity(current_velocity_, distance_to_goal);
+  // TODO: pick a path and update curvature
 
-  drive_msg_.velocity = current_velocity_;
-  drive_msg_.curvature = current_curvature_;
+  float distance_to_goal = FreePathLength(current_control_.curvature);
+  current_control_.velocity = ComputeVelocity(current_control_.velocity, distance_to_goal);
+  
+  past_controls_.push(current_control_);
+
+  drive_msg_.velocity = current_control_.velocity;
+  drive_msg_.curvature = current_control_.curvature;
   counter++;
 
 
@@ -158,6 +166,12 @@ void Navigation::Run() {
   local_viz_msg_.header.stamp = ros::Time::now();
   global_viz_msg_.header.stamp = ros::Time::now();
   drive_msg_.header.stamp = ros::Time::now();
+
+  // draw the forward predicted point cloud in simulation
+  for (auto point : point_cloud_) {
+    visualization::DrawPoint(point, 0x5eeb34, local_viz_msg_);
+  }
+
   // Publish messages.
   viz_pub_.publish(local_viz_msg_);
   viz_pub_.publish(global_viz_msg_);
@@ -166,13 +180,23 @@ void Navigation::Run() {
 
 void Navigation::LatencyCompensation() {
   float x, y;
+  struct Control control;
+
+  // if we haven't seen enough past controls, assume we haven't started moving
+  // and skip latency compensation step
+  if (past_controls_.size() < QUEUE_LEN) {
+    return;
+  }
+
+  // obtain the control issued LATENCYVALUE ago
+  control = past_controls_.front();
 
   // forward predict position
-  float turning_radius = std::abs(1.0 / current_curvature_);
-  float distance_traveled = current_velocity_ * LATENCYVALUE;
-  float arc_length_radians = distance_traveled / turning_radius;
-  float new_x = turning_radius * std::cos(arc_length_radians);
-  float new_y = turning_radius * std::sin(arc_length_radians);
+  float turning_radius = 1.0 / control.curvature;
+  float distance_traveled = control.velocity * SYSTEM_LATENCY;
+  float arc_radians = distance_traveled / turning_radius;
+  float new_x = distance_traveled * std::cos(arc_radians);
+  float new_y = distance_traveled * std::sin(arc_radians);
 
   // adjust each point in the point cloud based on forward predicted position
   for (unsigned int i = 0; i < point_cloud_.size(); i++) {
@@ -180,6 +204,9 @@ void Navigation::LatencyCompensation() {
     y = point_cloud_[i](1);
     point_cloud_[i] = Vector2f(x - new_x, y - new_y);
   }
+
+  // pop the control we used
+  past_controls_.pop();
 }
 
 double Navigation::PointFreePath(const Vector2f& point, const Vector2f& turning_center, float small_radius, float mid_radius, float large_radius, float turning_radius) {
@@ -247,8 +274,6 @@ double Navigation::FreePathLength(float proposed_curvature) {
   float turning_center_y = 0;
   float global_min_free_path = 100001.0;
 
-  // mid_radius += 0;
-
   // Computer the center turning points
   if (proposed_curvature > 0) {
     turning_center_y = turning_radius;
@@ -274,11 +299,11 @@ double Navigation::FreePathLength(float proposed_curvature) {
 float Navigation::ComputeVelocity(float current_velocity, float free_path) {
   // Computes the next step of our 1D controller based on the current 
   // velocity and the free path of proposed arc 
-  float minimum_distance = (-1 * (current_velocity * current_velocity)) / (2 * deceleration);
+  float minimum_distance = (-1 * (current_velocity * current_velocity)) / (2 * DECELERATION);
   if (free_path <= minimum_distance) {
-    return max(0.0, current_velocity + ((1.0 / hertz) * deceleration));
-  } else if (current_velocity < max_velocity) {
-    return current_velocity + ((1.0 / hertz) * acceleration);
+    return max(0.0, current_velocity + ((1.0 / HERTZ) * DECELERATION));
+  } else if (current_velocity < MAX_VELOCITY) {
+    return current_velocity + ((1.0 / HERTZ) * ACCELERATION);
   } else {
     // We are at the max velocity
     return current_velocity;
