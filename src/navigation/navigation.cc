@@ -44,6 +44,8 @@ using namespace math_util;
 using namespace ros_helpers;
 using namespace std;
 
+// key test comment
+
 namespace {
 ros::Publisher drive_pub_;
 ros::Publisher viz_pub_;
