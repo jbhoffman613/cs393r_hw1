@@ -350,15 +350,15 @@ double Navigation::PointFreePath(const Vector2f& point, const Vector2f& turning_
   abs_y = std::abs(point(1)); // absolute value of y
   if (point(0) > 0) {
     if (abs_y > turning_radius) {
-      theta = M_PI / 4.0 + std::acos(point(0) / point_radius);
+      theta = M_PI / 2.0 + std::acos(point(0) / point_radius);
     } else {
-      theta = M_PI / 4.0 - std::acos(point(0) / point_radius);
+      theta = M_PI / 2.0 - std::acos(point(0) / point_radius);
     }
   } else {
     if (abs_y > turning_radius) {
-      theta = 3 * M_PI / 4.0 - std::acos(std::abs(point(0)) / point_radius);
+      theta = 3 * M_PI / 2.0 - std::acos(std::abs(point(0)) / point_radius);
     } else {
-      theta = 3 * M_PI / 4.0 + std::acos(std::abs(point(0)) / point_radius);
+      theta = 3 * M_PI / 2.0 + std::acos(std::abs(point(0)) / point_radius);
     }
   }
   return (theta - beta) * turning_radius;
