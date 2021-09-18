@@ -44,8 +44,6 @@ using namespace math_util;
 using namespace ros_helpers;
 using namespace std;
 
-// key test comment
-
 namespace {
 ros::Publisher drive_pub_;
 ros::Publisher viz_pub_;
@@ -55,21 +53,23 @@ AckermannCurvatureDriveMsg drive_msg_;
 // Epsilon value for handling limited numerical precision.
 const float kEpsilon = 1e-5;
 const float ACCELERATION = 4.0;
-const float DECELERATION = -1.0;
+const float DECELERATION = -4.0;
 const int HERTZ = 20;
 const float MAX_VELOCITY = 1.0;
 
 // constants in meters
-const float MARGIN = 0.2;
-const float WIDTH = 0.28 + MARGIN; // 11 in - side to side of car
-const float LENGTH = 0.51 + MARGIN; // 20 - total front to back of car 
+const float FRONT_MARGIN = 0.4;
+const float SIDE_MARGIN = 0.08;
+const float WIDTH = 0.28 + SIDE_MARGIN; // 11 in - side to side of car
+const float LENGTH = 0.51 + FRONT_MARGIN; // 20 - total front to back of car 
 const float WHEELBASE = 0.33; // 13 in - back axel to front axel 
 const float TRACK = 0.22; // 9 in - in between the wheels
-const float SYSTEM_LATENCY = 0.25; // in seconds - TODO
-const int CURVATURES = 5;
+const float SYSTEM_LATENCY = 1.0; // in seconds - TODO
+const int CURVATURES = 11;
 
 // actuation latency = system latency * 0.75
 const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 * HERTZ);
+// const unsigned int QUEUE_LEN = 1;
 
 const float INITIAL_VELOCITY = 0;
 const float INITIAL_CURVATURE = 0.0;
@@ -158,8 +158,15 @@ void Navigation::Run() {
   vector<float> proposed_curvatures = ProposeCurvatures();
 
   PathOption chosen_path = PickCurve(proposed_curvatures);
+  cout << "CHOSE " << chosen_path.curvature << endl;
+  cout << endl;
 
-  cout << chosen_path.curvature << ", " << chosen_path.free_path_length << endl;
+  // cout << chosen_path.curvature << ", " << chosen_path.free_path_length << endl;
+
+  // PathOption chosen_path;
+  // chosen_path.curvature = 0;
+  // chosen_path.free_path_length = GoStraightFreePath();
+  // cout << chosen_path.free_path_length << endl;
 
   // float distance_to_goal = FreePathLength(current_control_.curvature);
   // float distance_to_goal = GoStraightFreePath();
@@ -178,9 +185,43 @@ void Navigation::Run() {
   drive_msg_.header.stamp = ros::Time::now();
 
   // draw the forward predicted point cloud in simulation
-  for (auto point : point_cloud_) {
-    visualization::DrawPoint(point, 0x5eeb34, local_viz_msg_);
-  }
+  // for (auto point : point_cloud_) {
+  //   visualization::DrawPoint(point, 0x5eeb34, local_viz_msg_);
+  // }
+
+
+  // draw a box around where the car is
+  // visualization::DrawLine(Vector2f(-(LENGTH-WIDTH)/2, WIDTH/2), WIDTH/2), 0xff000d, local_viz_msg_); // back left corner
+  // visualization::DrawLine(Vector2f((LENGTH+WIDTH)/2, WIDTH/2), )
+  // left side
+  visualization::DrawLine(Vector2f( -1 * (LENGTH - WIDTH) / 2, WIDTH / 2 ),
+                          Vector2f( (LENGTH + WIDTH) / 2, WIDTH / 2 ),
+                          0xff000d,
+                          local_viz_msg_);
+  // back
+  visualization::DrawLine(Vector2f( -1 * (LENGTH - WIDTH) / 2, WIDTH / 2 ),
+                          Vector2f( -1 * (LENGTH - WIDTH) / 2, -1 * WIDTH / 2 ),
+                          0xff000d,
+                          local_viz_msg_);
+  // right side
+  visualization::DrawLine(Vector2f( -1 * (LENGTH - WIDTH) / 2, -1 * WIDTH / 2 ),
+                          Vector2f( (LENGTH + WIDTH) / 2, -1 * WIDTH / 2 ),
+                          0xff000d,
+                          local_viz_msg_);
+  // front
+  visualization::DrawLine(Vector2f( (LENGTH + WIDTH) / 2, -1 * WIDTH / 2 ),
+                          Vector2f( (LENGTH + WIDTH) / 2, WIDTH / 2 ),
+                          0xff000d,
+                          local_viz_msg_);
+
+  // // straight line showing where we will go (if we are going in a straight path)
+  // visualization::DrawLine(Vector2f( (LENGTH / 2) + (WIDTH / 2), 0 ),
+  //                         Vector2f( (LENGTH / 2) + (WIDTH / 2) + chosen_path.free_path_length, 0),
+  //                         0x0400ff,
+  //                         local_viz_msg_);
+
+  // cout << QUEUE_LEN << endl;
+
 
   // Publish messages.
   viz_pub_.publish(local_viz_msg_);
@@ -192,7 +233,11 @@ vector<float> Navigation::ProposeCurvatures() {
   vector<float> proposed_curvatures;
   float curve_delta = 2.0 / (CURVATURES - 1.0);
   for (int i = 0; i < CURVATURES; i++) {
-    proposed_curvatures.push_back(-1.0 + i*curve_delta);
+    if (i == CURVATURES / 2) {
+      proposed_curvatures.push_back(0);
+    } else {
+      proposed_curvatures.push_back(-1.0 + i*curve_delta);
+    }
   }
   return proposed_curvatures;
 }
@@ -217,6 +262,7 @@ PathOption Navigation::RewardFunction(vector<PathOption> path_options) {
   float max_reward = -100000; // very small so we can choose paths with negative reward if we have to
   PathOption best_path;
   for (auto option : path_options) {
+    // option.free_path_length = std::min(3.0, double(option.free_path_length));
     reward = ApplyRewardFunction(option);
     cout << "curve: " << option.curvature << ", free path: " << option.free_path_length << ", reward: " << reward << endl;
     if (reward > max_reward) {
@@ -228,7 +274,8 @@ PathOption Navigation::RewardFunction(vector<PathOption> path_options) {
 }
 
 float Navigation::ApplyRewardFunction(PathOption option) {
-  return (2.0 * option.free_path_length) + (-4.0 * std::abs(option.curvature));
+  // return (2.0 * option.free_path_length) + (-0.05 * std::abs(option.curvature));
+  return option.free_path_length;
 }
 
 void Navigation::LatencyCompensation() {
@@ -280,6 +327,8 @@ double Navigation::PointFreePath(const Vector2f& point, const Vector2f& turning_
   // NOTE: This method should only be used after having already checked that a collision will eventually occur. 
   float beta, theta, abs_y;
 
+  visualization::DrawPoint(point, 0xff006a, local_viz_msg_);
+
   float point_radius = std::sqrt(
     std::pow(turning_center(0) - point(0), 2) + 
     std::pow(turning_center(1) - point(1), 2));
@@ -297,18 +346,19 @@ double Navigation::PointFreePath(const Vector2f& point, const Vector2f& turning_
     return 0; // keeps compiler from complaining that beta is uninitialized later
   }
 
+  // TODO: check on the theta values we create here
   abs_y = std::abs(point(1)); // absolute value of y
   if (point(0) > 0) {
     if (abs_y > turning_radius) {
-      theta = M_PI / 2.0 + std::acos(point(0) / point_radius);
+      theta = M_PI / 4.0 + std::acos(point(0) / point_radius);
     } else {
-      theta = M_PI / 2.0 - std::acos(point(0) / point_radius);
+      theta = M_PI / 4.0 - std::acos(point(0) / point_radius);
     }
   } else {
     if (abs_y > turning_radius) {
-      theta = 3 * M_PI / 2.0 - std::acos(std::abs(point(0)) / point_radius);
+      theta = 3 * M_PI / 4.0 - std::acos(std::abs(point(0)) / point_radius);
     } else {
-      theta = 3 * M_PI / 2.0 + std::acos(std::abs(point(0)) / point_radius);
+      theta = 3 * M_PI / 4.0 + std::acos(std::abs(point(0)) / point_radius);
     }
   }
   return (theta - beta) * turning_radius;
@@ -370,7 +420,7 @@ float Navigation::GoStraightFreePath() {
     // WE ADD IN EXTRA - TODO - MAY NEED TWEAK
     if (point(1) >= -1 * ((WIDTH / 2) + 0.01) && point(1) <= ((WIDTH / 2)+ 0.01)) {
       // TODO MAY NEED TO INCLUDE THE LENGTH OF THE CAR IN THE NEW LENGTH - POTENTIAL BUG
-      new_length = point(0);
+      new_length = point(0) - ((LENGTH / 2) + (WHEELBASE / 2));
       global_min = std::min(global_min, new_length);
     }
   }
