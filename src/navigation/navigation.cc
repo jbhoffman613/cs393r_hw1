@@ -65,11 +65,11 @@ const float LENGTH = 0.51 + FRONT_MARGIN; // 20 - total front to back of car
 const float WHEELBASE = 0.33; // 13 in - back axel to front axel 
 const float TRACK = 0.22; // 9 in - in between the wheels
 const float SYSTEM_LATENCY = 1.0; // in seconds - TODO
-const int CURVATURES = 11;
+const int CURVATURES = 15;
 
 // actuation latency = system latency * 0.75
-const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 * HERTZ);
-// const unsigned int QUEUE_LEN = 1;
+// const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 * HERTZ);
+const unsigned int QUEUE_LEN = 1;
 
 const float INITIAL_VELOCITY = 0;
 const float INITIAL_CURVATURE = 0.0;
@@ -231,12 +231,14 @@ void Navigation::Run() {
 
 vector<float> Navigation::ProposeCurvatures() {
   vector<float> proposed_curvatures;
-  float curve_delta = 2.0 / (CURVATURES - 1.0);
+  float curvature_max = 2;
+  // float curve_delta = 2.0 / (CURVATURES - 1.0);
+  float curve_delta = (curvature_max*2) /  (CURVATURES - 1.0);
   for (int i = 0; i < CURVATURES; i++) {
     if (i == CURVATURES / 2) {
       proposed_curvatures.push_back(0);
     } else {
-      proposed_curvatures.push_back(-1.0 + i*curve_delta);
+      proposed_curvatures.push_back(-1.0*curvature_max + i*curve_delta);
     }
   }
   return proposed_curvatures;
@@ -250,6 +252,7 @@ PathOption Navigation::PickCurve(vector<float> proposed_curves) {
     PathOption new_option;
     new_option.curvature = curve;
     new_option.free_path_length = FreePathLength(curve);
+    new_option.clearance = CalculateClearance(curve);
     path_options.push_back(new_option);
   }
 
@@ -274,8 +277,8 @@ PathOption Navigation::RewardFunction(vector<PathOption> path_options) {
 }
 
 float Navigation::ApplyRewardFunction(PathOption option) {
-  // return (2.0 * option.free_path_length) + (-0.05 * std::abs(option.curvature));
-  return option.free_path_length;
+  return (2.0 * option.free_path_length) + (-0.05 * std::abs(option.curvature)) + (-4 * option.clearance);
+  // return option.free_path_length;
 }
 
 void Navigation::LatencyCompensation() {
@@ -409,6 +412,44 @@ double Navigation::FreePathLength(float proposed_curvature) {
   }
   return global_min_free_path;
 }
+
+// TODO: hacked this together super fast, may need edits
+double Navigation::CalculateClearance(float proposed_curvature) {
+
+  float global_min = 10001.0;
+  float new_min; 
+  if (proposed_curvature == 0) {
+    for (auto point : point_cloud_) {
+      new_min = std::sqrt(point(0) * point(0) + point(1) * point(1));
+      if (new_min < global_min) {
+        global_min = new_min;
+      }
+    }
+    return global_min;
+  }
+
+  // Find the turning radii necessary to compute collision
+  float turning_radius = std::abs(1.0 / proposed_curvature);
+  float turning_center_x = 0;
+  float turning_center_y = 0;
+
+  // Computer the center turning points
+  if (proposed_curvature > 0) {
+    turning_center_y = turning_radius;
+  } else {
+    turning_center_y = -1 * turning_radius;
+  }
+
+  for(auto point : point_cloud_) {
+    new_min = std::sqrt(std::pow(turning_center_x - point(0), 2) + std::pow(turning_center_y - point(1), 2)) - turning_radius;
+    if (new_min < global_min) {
+      global_min = new_min;
+    }
+  }
+
+  return global_min;
+}
+
 
 float Navigation::GoStraightFreePath() {
   // For going straight, takes all points in a point cloud and returns the distance that the 

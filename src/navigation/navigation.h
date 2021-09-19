@@ -91,6 +91,8 @@ class Navigation {
 
   float ApplyRewardFunction(PathOption option);
 
+  double CalculateClearance(float proposed_curvature);
+
  private:
 
   // Whether odometry has been initialized.
