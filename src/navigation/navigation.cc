@@ -225,6 +225,12 @@ void Navigation::Run() {
                           0xff000d,
                           local_viz_msg_);
 
+  // for (auto curv : proposed_curvatures) {
+
+  // }
+
+  // visualization::DrawArc(Vector2f())
+
   // // straight line showing where we will go (if we are going in a straight path)
   // visualization::DrawLine(Vector2f( (LENGTH / 2) + (WIDTH / 2), 0 ),
   //                         Vector2f( (LENGTH / 2) + (WIDTH / 2) + chosen_path.free_path_length, 0),
@@ -297,7 +303,7 @@ float Navigation::ApplyRewardFunction(PathOption option) {
     // curve_add = 0.6;
   }
   
-  return (2.0 * option.free_path_length) + (-0.05 * std::abs(option.curvature)) + (4 * option.clearance);
+  return (10.0 * option.free_path_length) + (-0.05 * std::abs(option.curvature)) + (2.0 * option.clearance);
   // return option.free_path_length;
 }
 
