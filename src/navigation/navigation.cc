@@ -88,7 +88,7 @@ Navigation::Navigation(const string& map_file, ros::NodeHandle* n) :
     nav_complete_(true),
     nav_goal_loc_(0, 0),
     nav_goal_angle_(0),
-    counter(0) {
+    prev_curv_(0.0) {
   drive_pub_ = n->advertise<AckermannCurvatureDriveMsg>(
       "ackermann_curvature_drive", 1);
   viz_pub_ = n->advertise<VisualizationMsg>("visualization", 1);
@@ -157,9 +157,10 @@ void Navigation::Run() {
 
   vector<float> proposed_curvatures = ProposeCurvatures();
 
-  PathOption chosen_path = PickCurve(proposed_curvatures);
-  cout << "CHOSE " << chosen_path.curvature << endl;
-  cout << endl;
+  auto ret = PickCurve(proposed_curvatures);
+  PathOption chosen_path = ret.first;
+  float max_free_path = ret.second;
+  std::cout << max_free_path << " ";
 
   // cout << chosen_path.curvature << ", " << chosen_path.free_path_length << endl;
 
@@ -176,7 +177,17 @@ void Navigation::Run() {
 
   drive_msg_.velocity = current_control_.velocity;
   // drive_msg_.curvature = current_control_.curvature;
+  prev_curv_ = chosen_path.curvature;
   drive_msg_.curvature = chosen_path.curvature;
+
+  // if (max_free_path < 0.8) {
+  //   std::cout << "J TURN STATE" << std::endl;
+  //   drive_msg_.curvature = 0;
+  //   drive_msg_.velocity = 0;
+  // } else {
+    cout << "CHOSE " << chosen_path.curvature << endl << endl;
+  //   // cout << endl;
+  // }
 
 
   // Add timestamps to all messages.
@@ -231,7 +242,7 @@ void Navigation::Run() {
 
 vector<float> Navigation::ProposeCurvatures() {
   vector<float> proposed_curvatures;
-  float curvature_max = 2;
+  float curvature_max = 1.2;
   // float curve_delta = 2.0 / (CURVATURES - 1.0);
   float curve_delta = (curvature_max*2) /  (CURVATURES - 1.0);
   for (int i = 0; i < CURVATURES; i++) {
@@ -244,20 +255,22 @@ vector<float> Navigation::ProposeCurvatures() {
   return proposed_curvatures;
 }
 
-PathOption Navigation::PickCurve(vector<float> proposed_curves) {
+std::pair<PathOption, float> Navigation::PickCurve(vector<float> proposed_curves) {
   // using proposed_curves, create a vector of PathOptions
   vector<PathOption> path_options;
+  float max_free_path = 0.0;
 
   for (auto curve : proposed_curves) {
     PathOption new_option;
     new_option.curvature = curve;
     new_option.free_path_length = FreePathLength(curve);
+    max_free_path = std::max(max_free_path, new_option.free_path_length);
     new_option.clearance = CalculateClearance(curve);
     path_options.push_back(new_option);
   }
 
   // now pick a curve based on our reward function and return
-  return RewardFunction(path_options);
+  return {RewardFunction(path_options), max_free_path};
 }
 
 PathOption Navigation::RewardFunction(vector<PathOption> path_options) {
@@ -277,7 +290,14 @@ PathOption Navigation::RewardFunction(vector<PathOption> path_options) {
 }
 
 float Navigation::ApplyRewardFunction(PathOption option) {
-  return (2.0 * option.free_path_length) + (-0.05 * std::abs(option.curvature)) + (-4 * option.clearance);
+  // float is_curve = (option.curvature == 0) ? 0.5 : -1 * std::abs(option.curvature - 1);
+  // float curve_add = 0;
+
+  if ((prev_curv_ > 0 && option.curvature > 0) || (prev_curv_ < 0 && option.curvature < 0)) {
+    // curve_add = 0.6;
+  }
+  
+  return (2.0 * option.free_path_length) + (-0.05 * std::abs(option.curvature)) + (4 * option.clearance);
   // return option.free_path_length;
 }
 
@@ -406,10 +426,12 @@ double Navigation::FreePathLength(float proposed_curvature) {
       global_min_free_path = std::min(global_min_free_path, proposed_path_length);
     }
   }
+
   if (global_min_free_path >= 100000) { // if we won't hit any points
     // set path length as a full circle length 
-    global_min_free_path = turning_radius * M_PI * 2;
+    global_min_free_path = turning_radius * M_PI;
   }
+
   return global_min_free_path;
 }
 

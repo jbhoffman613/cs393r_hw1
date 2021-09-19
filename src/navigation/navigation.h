@@ -85,7 +85,7 @@ class Navigation {
 
   std::vector<float> ProposeCurvatures();
 
-  PathOption PickCurve(std::vector<float> proposed_curves);
+  std::pair<PathOption, float> PickCurve(std::vector<float> proposed_curves);
 
   PathOption RewardFunction(std::vector<PathOption> path_options);
 
@@ -126,6 +126,8 @@ class Navigation {
   float nav_goal_angle_;
 
   std::queue<struct Control> past_controls_;
+
+  float prev_curv_;
   
   // // Current Velocity
   // float current_velocity_;
@@ -133,7 +135,6 @@ class Navigation {
   // float current_curvature_;
   struct Control current_control_;
 
-  int counter;
 };
 
 }  // namespace navigation
