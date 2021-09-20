@@ -55,7 +55,7 @@ const float kEpsilon = 1e-5;
 const float ACCELERATION = 4.0;
 const float DECELERATION = -4.0;
 const int HERTZ = 20;
-const float MAX_VELOCITY = 1.0;
+const float MAX_VELOCITY = 2.0;
 
 // constants in meters
 const float FRONT_MARGIN = 0.4;
@@ -77,7 +77,7 @@ const unsigned int QUEUE_LEN = 1;
 const float INITIAL_VELOCITY = 0;
 const float INITIAL_CURVATURE = 0.0;
 
-const bool DO_JTURN = false;
+const bool DO_JTURN = true;
 
 } //namespace
 
@@ -143,30 +143,19 @@ void Navigation::Run() {
 
   if (!odom_initialized_) return;
 
-  if (!DO_JTURN) {
+  if (state_ == State::AUTO) {
     RunAutonomous();
-  } else {
-    if (state_ == State::AUTO) {
-      RunAutonomous();
-    } else if (state_ == State::FL) {
-      RunRobot(0.5, -2);
-    } else if (state_ == State::RR) {
-      RunRobot(-0.5, 2);
-    } else if (state_ == State::SANDBOX) {
-        current_control_.velocity = -0.5;
-        current_control_.curvature = 2;
-        j_turn_timer_--;
-
-        if (j_turn_timer_ <= 0) {
-          current_control_.velocity = 0;
-          current_control_.curvature = 0;
-        }
-    }
+  } else if (state_ == State::FL) {
+    RunRobot(J_TURN_VELO, -J_TURN_CURV);
+  } else if (state_ == State::RR) {
+    RunRobot(-J_TURN_VELO, J_TURN_CURV);
+  } else if (state_ == State::SANDBOX) {
+      current_control_.velocity = 0;
+      current_control_.curvature = 0;
   }
 
   PublishControl();
   PublishVis();
-
 }
 
 void Navigation::RunAutonomous() {  
@@ -178,21 +167,21 @@ void Navigation::RunAutonomous() {
   PathOption chosen_path = ret.first;
   float max_free_path = ret.second;
 
+  std::cout << max_free_path << std::endl;
+
   current_control_.velocity = ComputeVelocity(current_control_.velocity, chosen_path.free_path_length);
   current_control_.curvature = chosen_path.curvature;
 
   past_controls_.push(current_control_);
 
-  if (DO_JTURN) {
-    if (max_free_path < 0.8) {
-      state_ = State::RR;
-      j_turn_timer_ = FLRR_DURATION * HERTZ;
-    }
+  if (DO_JTURN && max_free_path < 0.8) {
+    state_ = State::FL;
+    j_turn_timer_ = FLRR_DURATION * HERTZ;
   }
 }
 
 void Navigation::RunRobot(float velocity, float curvature) {
-  if (GoStraightFreePath() > 2) {
+  if (GoStraightFreePath() > 1) {
     state_ = State::AUTO;
     return;
   }
@@ -201,11 +190,13 @@ void Navigation::RunRobot(float velocity, float curvature) {
   current_control_.velocity = velocity;
   current_control_.curvature = curvature;
 
-  // if (state_ == State::FL && FreePathLength(curvature) < 0.05) {
-  //   state_ = State::RR;
-  //   j_turn_timer_ = FLRR_DURATION * HERTZ;
-  //   return;
-  // }
+  if (state_ == State::FL && FreePathLength(curvature) < 0.1) {
+    state_ = State::RR;
+    j_turn_timer_ = FLRR_DURATION * HERTZ;
+    current_control_.velocity = 0;
+    current_control_.curvature = 0;
+    return;
+  }
 
   if (j_turn_timer_ <= 0) {
     state_ =  (state_ == State::FL) ? State::RR : State::FL;
@@ -308,6 +299,7 @@ PathOption Navigation::RewardFunction(vector<PathOption> path_options) {
       best_path = option;
     }
   }
+  std::cout << endl;
   return best_path;
 }
 
