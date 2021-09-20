@@ -95,7 +95,7 @@ Navigation::Navigation(const string& map_file, ros::NodeHandle* n) :
   local_viz_msg_ = visualization::NewVisualizationMessage(
       "base_link", "navigation_local");
   global_viz_msg_ = visualization::NewVisualizationMessage(
-      "map", "navigation_global");
+      "map", "navigation_global");(
   InitRosHeader("base_link", &drive_msg_.header);
   current_control_ = {INITIAL_VELOCITY, INITIAL_CURVATURE}; // initialize current velocity and curvature to 0
 }
@@ -134,61 +134,40 @@ void Navigation::ObservePointCloud(const vector<Vector2f>& cloud,
 
 void Navigation::Run() {
   // This function gets called 20 times a second to form the control loop.
-  
+  total_dist_ += past_controls_.top()(0) / HERTZ;
   // Clear previous visualizations.
   visualization::ClearVisualizationMsg(local_viz_msg_);
   visualization::ClearVisualizationMsg(global_viz_msg_);
-
-  // If odometry has not been initialized, we can't do anything.
   if (!odom_initialized_) return;
 
-  // The control iteration goes here. 
-  // Feel free to make helper functions to structure the control appropriately.
-  
-  // The latest observed point cloud is accessible via "point_cloud_"
-
-  // Eventually, you will have to set the control values to issue drive commands:
-  // drive_msg_.curvature = ...;
-  // drive_msg_.velocity = ...;
-
+  cout << "odom loc: (" <<odom_loc_(0) << ", " << odom_loc_(1) << ") odom angle: " << odom_angle_ << std::endl;
   LatencyCompensation();
 
   // TODO: pick a path and update curvature
 
+  // if (true) {
+
+  // } else {
+
+  // }
+
   vector<float> proposed_curvatures = ProposeCurvatures();
 
-  auto ret = PickCurve(proposed_curvatures);
+  auto ret = PickCurve(proposed_curvatures); // returns max free path AND path option object
   PathOption chosen_path = ret.first;
   float max_free_path = ret.second;
   std::cout << max_free_path << " ";
 
-  // cout << chosen_path.curvature << ", " << chosen_path.free_path_length << endl;
-
-  // PathOption chosen_path;
-  // chosen_path.curvature = 0;
-  // chosen_path.free_path_length = GoStraightFreePath();
-  // cout << chosen_path.free_path_length << endl;
-
-  // float distance_to_goal = FreePathLength(current_control_.curvature);
-  // float distance_to_goal = GoStraightFreePath();
   current_control_.velocity = ComputeVelocity(current_control_.velocity, chosen_path.free_path_length);
   
   past_controls_.push(current_control_);
 
   drive_msg_.velocity = current_control_.velocity;
-  // drive_msg_.curvature = current_control_.curvature;
   prev_curv_ = chosen_path.curvature;
   drive_msg_.curvature = chosen_path.curvature;
 
-  // if (max_free_path < 0.8) {
-  //   std::cout << "J TURN STATE" << std::endl;
-  //   drive_msg_.curvature = 0;
-  //   drive_msg_.velocity = 0;
-  // } else {
-    cout << "CHOSE " << chosen_path.curvature << endl << endl;
-  //   // cout << endl;
-  // }
 
+  cout << "CHOSE " << chosen_path.curvature << endl << endl;
 
   // Add timestamps to all messages.
   local_viz_msg_.header.stamp = ros::Time::now();
@@ -224,21 +203,6 @@ void Navigation::Run() {
                           Vector2f( (LENGTH + WIDTH) / 2, WIDTH / 2 ),
                           0xff000d,
                           local_viz_msg_);
-
-  // for (auto curv : proposed_curvatures) {
-
-  // }
-
-  // visualization::DrawArc(Vector2f())
-
-  // // straight line showing where we will go (if we are going in a straight path)
-  // visualization::DrawLine(Vector2f( (LENGTH / 2) + (WIDTH / 2), 0 ),
-  //                         Vector2f( (LENGTH / 2) + (WIDTH / 2) + chosen_path.free_path_length, 0),
-  //                         0x0400ff,
-  //                         local_viz_msg_);
-
-  // cout << QUEUE_LEN << endl;
-
 
   // Publish messages.
   viz_pub_.publish(local_viz_msg_);
@@ -491,6 +455,16 @@ float Navigation::GoStraightFreePath() {
       // TODO MAY NEED TO INCLUDE THE LENGTH OF THE CAR IN THE NEW LENGTH - POTENTIAL BUG
       new_length = point(0) - ((LENGTH / 2) + (WHEELBASE / 2));
       global_min = std::min(global_min, new_length);
+    }
+  }
+
+  float Mavigation::UTurn() {
+    if (total_dist_ <= 2.0) {
+      return 0.0;
+    } else if (total_dist_ <= 4.51327) {
+      return 1.25;
+    } else {
+      return 0.0;
     }
   }
 
