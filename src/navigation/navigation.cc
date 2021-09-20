@@ -55,7 +55,7 @@ const float kEpsilon = 1e-5;
 const float ACCELERATION = 4.0;
 const float DECELERATION = -4.0;
 const int HERTZ = 20;
-const float MAX_VELOCITY = 1.0;
+const float MAX_VELOCITY = 2.0;
 
 // constants in meters
 const float FRONT_MARGIN = 0.4;
@@ -134,10 +134,22 @@ void Navigation::ObservePointCloud(const vector<Vector2f>& cloud,
 
 void Navigation::Run() {
   // This function gets called 20 times a second to form the control loop.
+  
   // Clear previous visualizations.
   visualization::ClearVisualizationMsg(local_viz_msg_);
   visualization::ClearVisualizationMsg(global_viz_msg_);
+
+  // If odometry has not been initialized, we can't do anything.
   if (!odom_initialized_) return;
+
+  // The control iteration goes here. 
+  // Feel free to make helper functions to structure the control appropriately.
+  
+  // The latest observed point cloud is accessible via "point_cloud_"
+
+  // Eventually, you will have to set the control values to issue drive commands:
+  // drive_msg_.curvature = ...;
+  // drive_msg_.velocity = ...;
 
   LatencyCompensation();
 
@@ -145,22 +157,37 @@ void Navigation::Run() {
 
   vector<float> proposed_curvatures = ProposeCurvatures();
 
-  auto ret = PickCurve(proposed_curvatures); // returns max free path AND path option object
+  auto ret = PickCurve(proposed_curvatures);
   PathOption chosen_path = ret.first;
-  // float max_free_path = ret.second;
-  // std::cout << max_free_path << " ";
+  float max_free_path = ret.second;
+  std::cout << max_free_path << " ";
 
+  // cout << chosen_path.curvature << ", " << chosen_path.free_path_length << endl;
+
+  // PathOption chosen_path;
+  // chosen_path.curvature = 0;
+  // chosen_path.free_path_length = GoStraightFreePath();
+  // cout << chosen_path.free_path_length << endl;
+
+  // float distance_to_goal = FreePathLength(current_control_.curvature);
+  // float distance_to_goal = GoStraightFreePath();
   current_control_.velocity = ComputeVelocity(current_control_.velocity, chosen_path.free_path_length);
-
+  
   past_controls_.push(current_control_);
 
   drive_msg_.velocity = current_control_.velocity;
-  std::cout << current_control_.velocity << std::endl; 
+  // drive_msg_.curvature = current_control_.curvature;
   prev_curv_ = chosen_path.curvature;
   drive_msg_.curvature = chosen_path.curvature;
 
-
-  cout << "CHOSE " << chosen_path.curvature << endl << endl;
+  // if (max_free_path < 0.8) {
+  //   std::cout << "J TURN STATE" << std::endl;
+  //   drive_msg_.curvature = 0;
+  //   drive_msg_.velocity = 0;
+  // } else {
+    cout << "CHOSE " << chosen_path.curvature << endl << endl;
+  //   // cout << endl;
+  // }
 
 
   // Add timestamps to all messages.
@@ -197,6 +224,21 @@ void Navigation::Run() {
                           Vector2f( (LENGTH + WIDTH) / 2, WIDTH / 2 ),
                           0xff000d,
                           local_viz_msg_);
+
+  // for (auto curv : proposed_curvatures) {
+
+  // }
+
+  // visualization::DrawArc(Vector2f())
+
+  // // straight line showing where we will go (if we are going in a straight path)
+  // visualization::DrawLine(Vector2f( (LENGTH / 2) + (WIDTH / 2), 0 ),
+  //                         Vector2f( (LENGTH / 2) + (WIDTH / 2) + chosen_path.free_path_length, 0),
+  //                         0x0400ff,
+  //                         local_viz_msg_);
+
+  // cout << QUEUE_LEN << endl;
+
 
   // Publish messages.
   viz_pub_.publish(local_viz_msg_);
@@ -244,7 +286,7 @@ PathOption Navigation::RewardFunction(vector<PathOption> path_options) {
   for (auto option : path_options) {
     // option.free_path_length = std::min(3.0, double(option.free_path_length));
     reward = ApplyRewardFunction(option);
-    // cout << "curve: " << option.curvature << ", free path: " << option.free_path_length << ", reward: " << reward << endl;
+    cout << "curve: " << option.curvature << ", free path: " << option.free_path_length << ", reward: " << reward << endl;
     if (reward > max_reward) {
       max_reward = reward;
       best_path = option;
@@ -458,6 +500,7 @@ float Navigation::GoStraightFreePath() {
       return global_min;
     }
 }
+
 
 float Navigation::ComputeVelocity(float current_velocity, float free_path) {
   // Computes the next step of our 1D controller based on the current 

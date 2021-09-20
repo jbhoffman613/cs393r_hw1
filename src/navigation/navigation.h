@@ -81,7 +81,6 @@ class Navigation {
 
   void LatencyCompensation();
 
-
   float GoStraightFreePath();
 
   std::vector<float> ProposeCurvatures();
@@ -128,7 +127,8 @@ class Navigation {
 
   std::queue<struct Control> past_controls_;
 
-  float prev_curv_;  
+  float prev_curv_;
+  
   // // Current Velocity
   // float current_velocity_;
   // // Current curvature
