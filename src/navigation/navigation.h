@@ -81,7 +81,6 @@ class Navigation {
 
   void LatencyCompensation();
 
-  float UTurn();
 
   float GoStraightFreePath();
 
@@ -129,16 +128,7 @@ class Navigation {
 
   std::queue<struct Control> past_controls_;
 
-  float prev_curv_;
-
-  bool time_initialized_;
-
-  double start_time_;
-
-  double time_;
-
-  double total_dist_;
-  
+  float prev_curv_;  
   // // Current Velocity
   // float current_velocity_;
   // // Current curvature
