@@ -52,18 +52,32 @@ VisualizationMsg global_viz_msg_;
 AckermannCurvatureDriveMsg drive_msg_;
 // Epsilon value for handling limited numerical precision.
 const float kEpsilon = 1e-5;
-const float acceleration = 4.0;
-const float deceleration = -4.0;
-const int hertz = 20;
-const float max_velocity = 1.0;
+const float ACCELERATION = 4.0;
+const float DECELERATION = -4.0;
+const int HERTZ = 20;
+const float MAX_VELOCITY = 2.0;
 
 // constants in meters
-const float MARGIN = 0.2;
-const float WIDTH = 0.2 + MARGIN;
-const float LENGTH = 0.5 + MARGIN;
-const float WHEELBASE = 0.5;
-const float TRACK = 0.2;
-const float LATENCYVALUE = 0.1; // in seconds
+const float FRONT_MARGIN = 0.4;
+const float SIDE_MARGIN = 0.08;
+const float WIDTH = 0.28 + SIDE_MARGIN; // 11 in - side to side of car
+const float LENGTH = 0.51 + FRONT_MARGIN; // 20 - total front to back of car 
+const float WHEELBASE = 0.33; // 13 in - back axel to front axel 
+const float TRACK = 0.22; // 9 in - in between the wheels
+const float SYSTEM_LATENCY = 1.0; // in seconds 
+const int CURVATURES = 15;
+
+const float FLRR_DURATION = 2; // duration of J-turn segments
+const float J_TURN_VELO = 0.5;
+const float J_TURN_CURV = 2;
+
+// const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 * HERTZ);
+const unsigned int QUEUE_LEN = 1;
+
+const float INITIAL_VELOCITY = 0;
+const float INITIAL_CURVATURE = 0.0;
+
+const bool DO_JTURN = true;
 
 } //namespace
 
@@ -79,9 +93,8 @@ Navigation::Navigation(const string& map_file, ros::NodeHandle* n) :
     nav_complete_(true),
     nav_goal_loc_(0, 0),
     nav_goal_angle_(0),
-    current_velocity_(0),
-    current_curvature_(0.25),
-    counter(0) {
+    state_(State::AUTO),
+    j_turn_timer_(FLRR_DURATION * HERTZ) {
   drive_pub_ = n->advertise<AckermannCurvatureDriveMsg>(
       "ackermann_curvature_drive", 1);
   viz_pub_ = n->advertise<VisualizationMsg>("visualization", 1);
@@ -90,6 +103,7 @@ Navigation::Navigation(const string& map_file, ros::NodeHandle* n) :
   global_viz_msg_ = visualization::NewVisualizationMessage(
       "map", "navigation_global");
   InitRosHeader("base_link", &drive_msg_.header);
+  current_control_ = {INITIAL_VELOCITY, INITIAL_CURVATURE}; // initialize current velocity and curvature to 0
 }
 
 void Navigation::SetNavGoal(const Vector2f& loc, float angle) {
@@ -126,53 +140,206 @@ void Navigation::ObservePointCloud(const vector<Vector2f>& cloud,
 
 void Navigation::Run() {
   // This function gets called 20 times a second to form the control loop.
+
+  if (!odom_initialized_) return;
+
+  if (state_ == State::AUTO) {
+    RunAutonomous();
+  } else if (state_ == State::FL) {
+    RunRobot(J_TURN_VELO, -J_TURN_CURV);
+  } else if (state_ == State::RR) {
+    RunRobot(-J_TURN_VELO, J_TURN_CURV);
+  } else if (state_ == State::SANDBOX) {
+      current_control_.velocity = 0;
+      current_control_.curvature = 0;
+  }
+
+  PublishControl();
+  PublishVis();
+}
+
+void Navigation::RunAutonomous() {  
+  LatencyCompensation();
+
+  vector<float> proposed_curvatures = ProposeCurvatures();
+
+  auto ret = PickCurve(proposed_curvatures);
+  PathOption chosen_path = ret.first;
+  float max_free_path = ret.second;
+
+  std::cout << max_free_path << std::endl;
+
+  current_control_.velocity = ComputeVelocity(current_control_.velocity, chosen_path.free_path_length);
+  current_control_.curvature = chosen_path.curvature;
+
+  past_controls_.push(current_control_);
+
+  if (DO_JTURN && max_free_path < 0.8) {
+    state_ = State::FL;
+    j_turn_timer_ = FLRR_DURATION * HERTZ;
+  }
+}
+
+void Navigation::RunRobot(float velocity, float curvature) {
+  if (GoStraightFreePath() > 1) {
+    state_ = State::AUTO;
+    return;
+  }
   
+  // Do Small Forward Left Turn
+  current_control_.velocity = velocity;
+  current_control_.curvature = curvature;
+
+  if (state_ == State::FL && FreePathLength(curvature) < 0.1) {
+    state_ = State::RR;
+    j_turn_timer_ = FLRR_DURATION * HERTZ;
+    current_control_.velocity = 0;
+    current_control_.curvature = 0;
+    return;
+  }
+
+  if (j_turn_timer_ <= 0) {
+    state_ =  (state_ == State::FL) ? State::RR : State::FL;
+    j_turn_timer_ = FLRR_DURATION * HERTZ;
+  } else {
+    j_turn_timer_--;
+  }
+}
+
+void Navigation::PublishControl() {
+  drive_msg_.curvature = current_control_.curvature;
+  drive_msg_.velocity = current_control_.velocity;
+  drive_msg_.header.stamp = ros::Time::now();
+  drive_pub_.publish(drive_msg_);
+}
+
+void Navigation::PublishVis() {
   // Clear previous visualizations.
   visualization::ClearVisualizationMsg(local_viz_msg_);
   visualization::ClearVisualizationMsg(global_viz_msg_);
 
-  // If odometry has not been initialized, we can't do anything.
-  if (!odom_initialized_) return;
-
-  // The control iteration goes here. 
-  // Feel free to make helper functions to structure the control appropriately.
-  
-  // The latest observed point cloud is accessible via "point_cloud_"
-
-  // Eventually, you will have to set the control values to issue drive commands:
-  // drive_msg_.curvature = ...;
-  // drive_msg_.velocity = ...;
-
-  LatencyCompensation();
-
-  current_curvature_ = 0.25;
-  float distance_to_goal = FreePathLength(current_curvature_);
-  current_velocity_ = ComputeVelocity(current_velocity_, distance_to_goal);
-
-  drive_msg_.velocity = current_velocity_;
-  drive_msg_.curvature = current_curvature_;
-  counter++;
-
-
-  // Add timestamps to all messages.
   local_viz_msg_.header.stamp = ros::Time::now();
   global_viz_msg_.header.stamp = ros::Time::now();
-  drive_msg_.header.stamp = ros::Time::now();
+
+  // draw the forward predicted point cloud in simulation
+  // for (auto point : point_cloud_) {
+  //   visualization::DrawPoint(point, 0x5eeb34, local_viz_msg_);
+  // }
+
+  // draw a box around where the car is (including safety margin)
+  // left side
+  visualization::DrawLine(Vector2f( -1 * (LENGTH - WIDTH) / 2, WIDTH / 2 ),
+                          Vector2f( (LENGTH + WIDTH) / 2, WIDTH / 2 ),
+                          0xff000d,
+                          local_viz_msg_);
+  // back
+  visualization::DrawLine(Vector2f( -1 * (LENGTH - WIDTH) / 2, WIDTH / 2 ),
+                          Vector2f( -1 * (LENGTH - WIDTH) / 2, -1 * WIDTH / 2 ),
+                          0xff000d,
+                          local_viz_msg_);
+  // right side
+  visualization::DrawLine(Vector2f( -1 * (LENGTH - WIDTH) / 2, -1 * WIDTH / 2 ),
+                          Vector2f( (LENGTH + WIDTH) / 2, -1 * WIDTH / 2 ),
+                          0xff000d,
+                          local_viz_msg_);
+  // front
+  visualization::DrawLine(Vector2f( (LENGTH + WIDTH) / 2, -1 * WIDTH / 2 ),
+                          Vector2f( (LENGTH + WIDTH) / 2, WIDTH / 2 ),
+                          0xff000d,
+                          local_viz_msg_);
+
   // Publish messages.
   viz_pub_.publish(local_viz_msg_);
   viz_pub_.publish(global_viz_msg_);
-  drive_pub_.publish(drive_msg_);
+}
+
+vector<float> Navigation::ProposeCurvatures() {
+  vector<float> proposed_curvatures;
+  float curvature_max = 1.2;
+  // float curve_delta = 2.0 / (CURVATURES - 1.0);
+  float curve_delta = (curvature_max*2) /  (CURVATURES - 1.0);
+  for (int i = 0; i < CURVATURES; i++) {
+    if (i == CURVATURES / 2) {
+      proposed_curvatures.push_back(0);
+    } else {
+      proposed_curvatures.push_back(-1.0*curvature_max + i*curve_delta);
+    }
+  }
+  return proposed_curvatures;
+}
+
+std::pair<PathOption, float> Navigation::PickCurve(vector<float> proposed_curves) {
+  // using proposed_curves, create a vector of PathOptions
+  vector<PathOption> path_options;
+  float max_free_path = 0.0;
+
+  for (auto curve : proposed_curves) {
+    PathOption new_option;
+    new_option.curvature = curve;
+    new_option.free_path_length = FreePathLength(curve);
+    max_free_path = std::max(max_free_path, new_option.free_path_length);
+    new_option.clearance = CalculateClearance(curve);
+    path_options.push_back(new_option);
+  }
+
+  // now pick a curve based on our reward function and return
+  return {RewardFunction(path_options), max_free_path};
+}
+
+PathOption Navigation::RewardFunction(vector<PathOption> path_options) {
+  float reward;
+  float max_reward = -100000; // very small so we can choose paths with negative reward if we have to
+  PathOption best_path;
+  for (auto option : path_options) {
+    // option.free_path_length = std::min(3.0, double(option.free_path_length));
+    reward = ApplyRewardFunction(option);
+    cout << "curve: " << option.curvature << ", free path: " << option.free_path_length << ", reward: " << reward << endl;
+    if (reward > max_reward) {
+      max_reward = reward;
+      best_path = option;
+    }
+  }
+  std::cout << endl;
+  return best_path;
+}
+
+float Navigation::ApplyRewardFunction(PathOption option) {
+
+  return (10.0 * option.free_path_length) + (-0.05 * std::abs(option.curvature)) + (2.0 * option.clearance);
+  // return option.free_path_length;
 }
 
 void Navigation::LatencyCompensation() {
   float x, y;
+  struct Control control;
+
+  // if we haven't seen enough past controls, assume we haven't started moving
+  // and skip latency compensation step
+  if (past_controls_.size() < QUEUE_LEN) {
+    return;
+  }
+
+  // obtain the control issued LATENCYVALUE ago
+  control = past_controls_.front();
+
+  // USED THROUGHOUT THE METHOD
+  float distance_traveled = control.velocity * SYSTEM_LATENCY;
+
+  // For when the car is going straight 
+  if (control.curvature == 0.0) {
+    for (unsigned int i = 0; i < point_cloud_.size(); i++) {
+      x = point_cloud_[i](0);
+      y = point_cloud_[i](1);
+      point_cloud_[i] = Vector2f(x - distance_traveled, y);
+    }
+    return;
+  }
 
   // forward predict position
-  float turning_radius = std::abs(1.0 / current_curvature_);
-  float distance_traveled = current_velocity_ * LATENCYVALUE;
-  float arc_length_radians = distance_traveled / turning_radius;
-  float new_x = turning_radius * std::cos(arc_length_radians);
-  float new_y = turning_radius * std::sin(arc_length_radians);
+  float turning_radius = 1.0 / control.curvature;
+  float arc_radians = distance_traveled / turning_radius;
+  float new_x = distance_traveled * std::cos(arc_radians);
+  float new_y = distance_traveled * std::sin(arc_radians);
 
   // adjust each point in the point cloud based on forward predicted position
   for (unsigned int i = 0; i < point_cloud_.size(); i++) {
@@ -180,6 +347,9 @@ void Navigation::LatencyCompensation() {
     y = point_cloud_[i](1);
     point_cloud_[i] = Vector2f(x - new_x, y - new_y);
   }
+
+  // pop the control we used
+  past_controls_.pop();
 }
 
 double Navigation::PointFreePath(const Vector2f& point, const Vector2f& turning_center, float small_radius, float mid_radius, float large_radius, float turning_radius) {
@@ -187,6 +357,8 @@ double Navigation::PointFreePath(const Vector2f& point, const Vector2f& turning_
   // without colliding with the point. 
   // NOTE: This method should only be used after having already checked that a collision will eventually occur. 
   float beta, theta, abs_y;
+
+  visualization::DrawPoint(point, 0xff006a, local_viz_msg_);
 
   float point_radius = std::sqrt(
     std::pow(turning_center(0) - point(0), 2) + 
@@ -233,9 +405,8 @@ bool Navigation::CollisionCheck(const Vector2f& point, const Vector2f& turning_c
 }
 
 double Navigation::FreePathLength(float proposed_curvature) {
-  // todo 
   if (proposed_curvature == 0) {
-    return 0;
+    return GoStraightFreePath();
   }
 
   // Find the turning radii necessary to compute collision
@@ -246,8 +417,6 @@ double Navigation::FreePathLength(float proposed_curvature) {
   float turning_center_x = 0;
   float turning_center_y = 0;
   float global_min_free_path = 100001.0;
-
-  // mid_radius += 0;
 
   // Computer the center turning points
   if (proposed_curvature > 0) {
@@ -263,22 +432,81 @@ double Navigation::FreePathLength(float proposed_curvature) {
       global_min_free_path = std::min(global_min_free_path, proposed_path_length);
     }
   }
+
   if (global_min_free_path >= 100000) { // if we won't hit any points
     // set path length as a full circle length 
-    global_min_free_path = turning_radius * M_PI * 2;
+    global_min_free_path = turning_radius * M_PI;
   }
+
   return global_min_free_path;
+}
+
+double Navigation::CalculateClearance(float proposed_curvature) {
+
+  float global_min = 10001.0;
+  float new_min; 
+  if (proposed_curvature == 0) {
+    for (auto point : point_cloud_) {
+      new_min = std::sqrt(point(0) * point(0) + point(1) * point(1));
+      if (new_min < global_min) {
+        global_min = new_min;
+      }
+    }
+    return global_min;
+  }
+
+  // Find the turning radii necessary to compute collision
+  float turning_radius = std::abs(1.0 / proposed_curvature);
+  float turning_center_x = 0;
+  float turning_center_y = 0;
+
+  // Computer the center turning points
+  if (proposed_curvature > 0) {
+    turning_center_y = turning_radius;
+  } else {
+    turning_center_y = -1 * turning_radius;
+  }
+
+  for(auto point : point_cloud_) {
+    new_min = std::sqrt(std::pow(turning_center_x - point(0), 2) + std::pow(turning_center_y - point(1), 2)) - turning_radius;
+    if (new_min < global_min) {
+      global_min = new_min;
+    }
+  }
+
+  return global_min;
+}
+
+
+float Navigation::GoStraightFreePath() {
+  // For going straight, takes all points in a point cloud and returns the distance that the 
+  // car can travel forward. 
+  
+  float new_length;
+  float global_min = 10001.0;
+  for(auto point : point_cloud_) {
+    if (point(1) >= -1 * ((WIDTH / 2) + 0.01) && point(1) <= ((WIDTH / 2)+ 0.01)) {
+      new_length = point(0) - ((LENGTH / 2) + (WHEELBASE / 2));
+      global_min = std::min(global_min, new_length);
+    }
+  }
+
+  if (global_min >= 10000) {
+      return 20.0;
+    } else {
+      return global_min;
+    }
 }
 
 
 float Navigation::ComputeVelocity(float current_velocity, float free_path) {
   // Computes the next step of our 1D controller based on the current 
   // velocity and the free path of proposed arc 
-  float minimum_distance = (-1 * (current_velocity * current_velocity)) / (2 * deceleration);
+  float minimum_distance = (-1 * (current_velocity * current_velocity)) / (2 * DECELERATION);
   if (free_path <= minimum_distance) {
-    return max(0.0, current_velocity + ((1.0 / hertz) * deceleration));
-  } else if (current_velocity < max_velocity) {
-    return current_velocity + ((1.0 / hertz) * acceleration);
+    return max(0.0, current_velocity + ((1.0 / HERTZ) * DECELERATION));
+  } else if (current_velocity < MAX_VELOCITY) {
+    return current_velocity + ((1.0 / HERTZ) * ACCELERATION);
   } else {
     // We are at the max velocity
     return current_velocity;

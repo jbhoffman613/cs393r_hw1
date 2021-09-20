@@ -20,6 +20,7 @@
 //========================================================================
 
 #include <vector>
+#include <queue>
 
 #include "eigen3/Eigen/Dense"
 
@@ -39,6 +40,18 @@ struct PathOption {
   Eigen::Vector2f obstruction;
   Eigen::Vector2f closest_point;
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+};
+
+enum State {
+  AUTO,
+  FL,
+  RR,
+  SANDBOX
+};
+
+struct Control {
+  float velocity;
+  float curvature;
 };
 
 class Navigation {
@@ -62,6 +75,15 @@ class Navigation {
 
   // Main function called continously from main
   void Run();
+
+  void RunAutonomous();
+
+  void RunRobot(float velocity, float curvature);
+
+  void PublishControl();
+
+  void PublishVis();
+
   // Used to set the next target pose.
   void SetNavGoal(const Eigen::Vector2f& loc, float angle);
 
@@ -74,6 +96,18 @@ class Navigation {
   float ComputeVelocity(float current_velocity, float free_path);
 
   void LatencyCompensation();
+
+  float GoStraightFreePath();
+
+  std::vector<float> ProposeCurvatures();
+
+  std::pair<PathOption, float> PickCurve(std::vector<float> proposed_curves);
+
+  PathOption RewardFunction(std::vector<PathOption> path_options);
+
+  float ApplyRewardFunction(PathOption option);
+
+  double CalculateClearance(float proposed_curvature);
 
  private:
 
@@ -106,13 +140,17 @@ class Navigation {
   Eigen::Vector2f nav_goal_loc_;
   // Navigation goal angle.
   float nav_goal_angle_;
-  
-  // Current Velocity
-  float current_velocity_;
-  // Current curvature
-  float current_curvature_;
 
-  int counter;
+  std::queue<struct Control> past_controls_;
+
+  float prev_curv_;
+
+  State state_;
+
+  int j_turn_timer_;
+
+  struct Control current_control_;
+
 };
 
 }  // namespace navigation
