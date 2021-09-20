@@ -134,7 +134,7 @@ void Navigation::ObservePointCloud(const vector<Vector2f>& cloud,
 
 void Navigation::Run() {
   // This function gets called 20 times a second to form the control loop.
-  total_dist_ += past_controls_.top()(0) / HERTZ;
+  total_dist_ += past_controls_.front()(0) / HERTZ;
   // Clear previous visualizations.
   visualization::ClearVisualizationMsg(local_viz_msg_);
   visualization::ClearVisualizationMsg(global_viz_msg_);
@@ -144,30 +144,36 @@ void Navigation::Run() {
   LatencyCompensation();
 
   // TODO: pick a path and update curvature
+  bool do_uturn = false;
+  if (!do_uturn) {
 
-  // if (true) {
+    vector<float> proposed_curvatures = ProposeCurvatures();
 
-  // } else {
+    auto ret = PickCurve(proposed_curvatures); // returns max free path AND path option object
+    PathOption chosen_path = ret.first;
+    float max_free_path = ret.second;
+    std::cout << max_free_path << " ";
 
-  // }
+    current_control_.velocity = ComputeVelocity(current_control_.velocity, chosen_path.free_path_length);
 
-  vector<float> proposed_curvatures = ProposeCurvatures();
+    past_controls_.push(current_control_);
 
-  auto ret = PickCurve(proposed_curvatures); // returns max free path AND path option object
-  PathOption chosen_path = ret.first;
-  float max_free_path = ret.second;
-  std::cout << max_free_path << " ";
-
-  current_control_.velocity = ComputeVelocity(current_control_.velocity, chosen_path.free_path_length);
-  
-  past_controls_.push(current_control_);
-
-  drive_msg_.velocity = current_control_.velocity;
-  prev_curv_ = chosen_path.curvature;
-  drive_msg_.curvature = chosen_path.curvature;
+    drive_msg_.velocity = current_control_.velocity;
+    prev_curv_ = chosen_path.curvature;
+    drive_msg_.curvature = chosen_path.curvature;
 
 
-  cout << "CHOSE " << chosen_path.curvature << endl << endl;
+    cout << "CHOSE " << chosen_path.curvature << endl << endl;
+  } else {
+
+    float curv = UTurn();
+    float free_path_length = FreePathLength(curv);
+
+    current_control_.velocity = ComputeVelocity(current_control_.velocity, free_path_length);
+
+    drive_msg_.velocity = current_control_.velocity;
+    drive_msg_.curvature = curv;
+  }
 
   // Add timestamps to all messages.
   local_viz_msg_.header.stamp = ros::Time::now();
@@ -458,7 +464,7 @@ float Navigation::GoStraightFreePath() {
     }
   }
 
-  float Mavigation::UTurn() {
+  float Navigation::UTurn() {
     if (total_dist_ <= 2.0) {
       return 0.0;
     } else if (total_dist_ <= 4.51327) {
