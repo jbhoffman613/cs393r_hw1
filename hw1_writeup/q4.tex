@@ -1,3 +1,7 @@
 \section{Question 4: Future Improvements} 
 
-There are two future improvements. First, we do not explicitly throw out curves where the free path for that curve is less than the distance needed to decelerate to zero. We do this implicitly through rewarding curves with the longest free path, but we could update the code to 
+There are two future improvements. First, we do not explicitly throw out curves where the free path for that curve is less than the distance needed to decelerate to zero. We do this implicitly through rewarding curves with the longest free path, but we could update the code to explicitly throw out curves for whom we cannot decelerate in time if we took that free path. 
+
+The second improvement is that we could include some metric of the foreground being too cluttered or if the robot thinks that it would be too hard for the robot to navigate. Under this condition, the robot would automatically do a U-Turn if feasible. 
+
+Otherwise, we are rather proud of the work, and we believe that we have delivered everything requested in the brief. 
