@@ -42,6 +42,13 @@ struct PathOption {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 };
 
+enum State {
+  AUTO,
+  FL,
+  RR,
+  SANDBOX
+};
+
 struct Control {
   float velocity;
   float curvature;
@@ -68,6 +75,15 @@ class Navigation {
 
   // Main function called continously from main
   void Run();
+
+  void RunAutonomous();
+
+  void RunRobot(float velocity, float curvature);
+
+  void PublishControl();
+
+  void PublishVis();
+
   // Used to set the next target pose.
   void SetNavGoal(const Eigen::Vector2f& loc, float angle);
 
@@ -128,11 +144,11 @@ class Navigation {
   std::queue<struct Control> past_controls_;
 
   float prev_curv_;
-  
-  // // Current Velocity
-  // float current_velocity_;
-  // // Current curvature
-  // float current_curvature_;
+
+  State state_;
+
+  int j_turn_timer_;
+
   struct Control current_control_;
 
 };

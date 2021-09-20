@@ -55,7 +55,7 @@ const float kEpsilon = 1e-5;
 const float ACCELERATION = 4.0;
 const float DECELERATION = -4.0;
 const int HERTZ = 20;
-const float MAX_VELOCITY = 2.0;
+const float MAX_VELOCITY = 1.0;
 
 // constants in meters
 const float FRONT_MARGIN = 0.4;
@@ -66,6 +66,10 @@ const float WHEELBASE = 0.33; // 13 in - back axel to front axel
 const float TRACK = 0.22; // 9 in - in between the wheels
 const float SYSTEM_LATENCY = 1.0; // in seconds - TODO
 const int CURVATURES = 15;
+
+const float FLRR_DURATION = 2; // duration of J-turn segments
+const float J_TURN_VELO = 0.5;
+const float J_TURN_CURV = 2;
 
 // actuation latency = system latency * 0.75
 // const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 * HERTZ);
@@ -88,7 +92,8 @@ Navigation::Navigation(const string& map_file, ros::NodeHandle* n) :
     nav_complete_(true),
     nav_goal_loc_(0, 0),
     nav_goal_angle_(0),
-    prev_curv_(0.0) {
+    state_(State::AUTO),
+    j_turn_timer_(FLRR_DURATION * HERTZ) {
   drive_pub_ = n->advertise<AckermannCurvatureDriveMsg>(
       "ackermann_curvature_drive", 1);
   viz_pub_ = n->advertise<VisualizationMsg>("visualization", 1);
@@ -134,76 +139,100 @@ void Navigation::ObservePointCloud(const vector<Vector2f>& cloud,
 
 void Navigation::Run() {
   // This function gets called 20 times a second to form the control loop.
-  
-  // Clear previous visualizations.
-  visualization::ClearVisualizationMsg(local_viz_msg_);
-  visualization::ClearVisualizationMsg(global_viz_msg_);
 
-  // If odometry has not been initialized, we can't do anything.
   if (!odom_initialized_) return;
 
-  // The control iteration goes here. 
-  // Feel free to make helper functions to structure the control appropriately.
-  
-  // The latest observed point cloud is accessible via "point_cloud_"
+  std::cout << "State: " << state_ << std::endl;
 
-  // Eventually, you will have to set the control values to issue drive commands:
-  // drive_msg_.curvature = ...;
-  // drive_msg_.velocity = ...;
+  if (state_ == State::AUTO) {
+    RunAutonomous();
+  } else if (state_ == State::FL) {
+    RunRobot(0.5, -2);
+  } else if (state_ == State::RR) {
+    RunRobot(-0.5, 2);
+  } else if (state_ == State::SANDBOX) {
+      current_control_.velocity = -0.5;
+      current_control_.curvature = 2;
+      j_turn_timer_--;
 
+      if (j_turn_timer_ <= 0) {
+        current_control_.velocity = 0;
+        current_control_.curvature = 0;
+      }
+  }
+
+  PublishControl();
+  PublishVis();
+
+}
+
+void Navigation::RunAutonomous() {  
   LatencyCompensation();
-
-  // TODO: pick a path and update curvature
 
   vector<float> proposed_curvatures = ProposeCurvatures();
 
   auto ret = PickCurve(proposed_curvatures);
   PathOption chosen_path = ret.first;
   float max_free_path = ret.second;
-  std::cout << max_free_path << " ";
 
-  // cout << chosen_path.curvature << ", " << chosen_path.free_path_length << endl;
-
-  // PathOption chosen_path;
-  // chosen_path.curvature = 0;
-  // chosen_path.free_path_length = GoStraightFreePath();
-  // cout << chosen_path.free_path_length << endl;
-
-  // float distance_to_goal = FreePathLength(current_control_.curvature);
-  // float distance_to_goal = GoStraightFreePath();
   current_control_.velocity = ComputeVelocity(current_control_.velocity, chosen_path.free_path_length);
-  
+  current_control_.curvature = chosen_path.curvature;
+
   past_controls_.push(current_control_);
 
-  drive_msg_.velocity = current_control_.velocity;
-  // drive_msg_.curvature = current_control_.curvature;
-  prev_curv_ = chosen_path.curvature;
-  drive_msg_.curvature = chosen_path.curvature;
+  cout << "CHOSE " << current_control_.curvature << endl << endl;
 
-  // if (max_free_path < 0.8) {
-  //   std::cout << "J TURN STATE" << std::endl;
-  //   drive_msg_.curvature = 0;
-  //   drive_msg_.velocity = 0;
-  // } else {
-    cout << "CHOSE " << chosen_path.curvature << endl << endl;
-  //   // cout << endl;
+  if (max_free_path < 0.8) {
+    state_ = State::RR;
+    j_turn_timer_ = FLRR_DURATION * HERTZ;
+  }
+}
+
+void Navigation::RunRobot(float velocity, float curvature) {
+  if (GoStraightFreePath() > 2) {
+    state_ = State::AUTO;
+    return;
+  }
+  
+  // Do Small Forward Left Turn
+  current_control_.velocity = velocity;
+  current_control_.curvature = curvature;
+
+  // if (state_ == State::FL && FreePathLength(curvature) < 0.05) {
+  //   state_ = State::RR;
+  //   j_turn_timer_ = FLRR_DURATION * HERTZ;
+  //   return;
   // }
 
+  if (j_turn_timer_ <= 0) {
+    state_ =  (state_ == State::FL) ? State::RR : State::FL;
+    j_turn_timer_ = FLRR_DURATION * HERTZ;
+  } else {
+    j_turn_timer_--;
+  }
+}
 
-  // Add timestamps to all messages.
+void Navigation::PublishControl() {
+  drive_msg_.curvature = current_control_.curvature;
+  drive_msg_.velocity = current_control_.velocity;
+  drive_msg_.header.stamp = ros::Time::now();
+  drive_pub_.publish(drive_msg_);
+}
+
+void Navigation::PublishVis() {
+  // Clear previous visualizations.
+  visualization::ClearVisualizationMsg(local_viz_msg_);
+  visualization::ClearVisualizationMsg(global_viz_msg_);
+
   local_viz_msg_.header.stamp = ros::Time::now();
   global_viz_msg_.header.stamp = ros::Time::now();
-  drive_msg_.header.stamp = ros::Time::now();
 
   // draw the forward predicted point cloud in simulation
   // for (auto point : point_cloud_) {
   //   visualization::DrawPoint(point, 0x5eeb34, local_viz_msg_);
   // }
 
-
   // draw a box around where the car is
-  // visualization::DrawLine(Vector2f(-(LENGTH-WIDTH)/2, WIDTH/2), WIDTH/2), 0xff000d, local_viz_msg_); // back left corner
-  // visualization::DrawLine(Vector2f((LENGTH+WIDTH)/2, WIDTH/2), )
   // left side
   visualization::DrawLine(Vector2f( -1 * (LENGTH - WIDTH) / 2, WIDTH / 2 ),
                           Vector2f( (LENGTH + WIDTH) / 2, WIDTH / 2 ),
@@ -225,25 +254,15 @@ void Navigation::Run() {
                           0xff000d,
                           local_viz_msg_);
 
-  // for (auto curv : proposed_curvatures) {
-
-  // }
-
-  // visualization::DrawArc(Vector2f())
-
   // // straight line showing where we will go (if we are going in a straight path)
   // visualization::DrawLine(Vector2f( (LENGTH / 2) + (WIDTH / 2), 0 ),
   //                         Vector2f( (LENGTH / 2) + (WIDTH / 2) + chosen_path.free_path_length, 0),
   //                         0x0400ff,
   //                         local_viz_msg_);
 
-  // cout << QUEUE_LEN << endl;
-
-
   // Publish messages.
   viz_pub_.publish(local_viz_msg_);
   viz_pub_.publish(global_viz_msg_);
-  drive_pub_.publish(drive_msg_);
 }
 
 vector<float> Navigation::ProposeCurvatures() {
@@ -296,13 +315,7 @@ PathOption Navigation::RewardFunction(vector<PathOption> path_options) {
 }
 
 float Navigation::ApplyRewardFunction(PathOption option) {
-  // float is_curve = (option.curvature == 0) ? 0.5 : -1 * std::abs(option.curvature - 1);
-  // float curve_add = 0;
 
-  if ((prev_curv_ > 0 && option.curvature > 0) || (prev_curv_ < 0 && option.curvature < 0)) {
-    // curve_add = 0.6;
-  }
-  
   return (10.0 * option.free_path_length) + (-0.05 * std::abs(option.curvature)) + (2.0 * option.clearance);
   // return option.free_path_length;
 }
