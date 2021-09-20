@@ -95,7 +95,7 @@ Navigation::Navigation(const string& map_file, ros::NodeHandle* n) :
   local_viz_msg_ = visualization::NewVisualizationMessage(
       "base_link", "navigation_local");
   global_viz_msg_ = visualization::NewVisualizationMessage(
-      "map", "navigation_global");(
+      "map", "navigation_global");
   InitRosHeader("base_link", &drive_msg_.header);
   current_control_ = {INITIAL_VELOCITY, INITIAL_CURVATURE}; // initialize current velocity and curvature to 0
 }
@@ -134,13 +134,13 @@ void Navigation::ObservePointCloud(const vector<Vector2f>& cloud,
 
 void Navigation::Run() {
   // This function gets called 20 times a second to form the control loop.
-  total_dist_ += past_controls_.front()(0) / HERTZ;
+  total_dist_ += past_controls_.front().velocity / HERTZ;
   // Clear previous visualizations.
   visualization::ClearVisualizationMsg(local_viz_msg_);
   visualization::ClearVisualizationMsg(global_viz_msg_);
   if (!odom_initialized_) return;
 
-  cout << "odom loc: (" <<odom_loc_(0) << ", " << odom_loc_(1) << ") odom angle: " << odom_angle_ << std::endl;
+  // cout << "odom loc: (" <<odom_loc_(0) << ", " << odom_loc_(1) << ") odom angle: " << odom_angle_ << std::endl;
   LatencyCompensation();
 
   // TODO: pick a path and update curvature
@@ -464,20 +464,20 @@ float Navigation::GoStraightFreePath() {
     }
   }
 
-  float Navigation::UTurn() {
+  if (global_min >= 10000) {
+      return 20.0;
+    } else {
+      return global_min;
+    }
+}
+
+float Navigation::UTurn() {
     if (total_dist_ <= 2.0) {
       return 0.0;
     } else if (total_dist_ <= 4.51327) {
       return 1.25;
     } else {
       return 0.0;
-    }
-  }
-
-  if (global_min >= 10000) {
-      return 20.0;
-    } else {
-      return global_min;
     }
 }
 

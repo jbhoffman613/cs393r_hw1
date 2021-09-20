@@ -81,6 +81,8 @@ class Navigation {
 
   void LatencyCompensation();
 
+  float UTurn();
+
   float GoStraightFreePath();
 
   std::vector<float> ProposeCurvatures();
