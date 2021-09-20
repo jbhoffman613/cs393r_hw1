@@ -64,19 +64,20 @@ const float WIDTH = 0.28 + SIDE_MARGIN; // 11 in - side to side of car
 const float LENGTH = 0.51 + FRONT_MARGIN; // 20 - total front to back of car 
 const float WHEELBASE = 0.33; // 13 in - back axel to front axel 
 const float TRACK = 0.22; // 9 in - in between the wheels
-const float SYSTEM_LATENCY = 1.0; // in seconds - TODO
+const float SYSTEM_LATENCY = 1.0; // in seconds 
 const int CURVATURES = 15;
 
 const float FLRR_DURATION = 2; // duration of J-turn segments
 const float J_TURN_VELO = 0.5;
 const float J_TURN_CURV = 2;
 
-// actuation latency = system latency * 0.75
 // const unsigned int QUEUE_LEN = ceil(SYSTEM_LATENCY*0.75 * HERTZ);
 const unsigned int QUEUE_LEN = 1;
 
 const float INITIAL_VELOCITY = 0;
 const float INITIAL_CURVATURE = 0.0;
+
+const bool DO_JTURN = false;
 
 } //namespace
 
@@ -142,23 +143,25 @@ void Navigation::Run() {
 
   if (!odom_initialized_) return;
 
-  std::cout << "State: " << state_ << std::endl;
-
-  if (state_ == State::AUTO) {
+  if (!DO_JTURN) {
     RunAutonomous();
-  } else if (state_ == State::FL) {
-    RunRobot(0.5, -2);
-  } else if (state_ == State::RR) {
-    RunRobot(-0.5, 2);
-  } else if (state_ == State::SANDBOX) {
-      current_control_.velocity = -0.5;
-      current_control_.curvature = 2;
-      j_turn_timer_--;
+  } else {
+    if (state_ == State::AUTO) {
+      RunAutonomous();
+    } else if (state_ == State::FL) {
+      RunRobot(0.5, -2);
+    } else if (state_ == State::RR) {
+      RunRobot(-0.5, 2);
+    } else if (state_ == State::SANDBOX) {
+        current_control_.velocity = -0.5;
+        current_control_.curvature = 2;
+        j_turn_timer_--;
 
-      if (j_turn_timer_ <= 0) {
-        current_control_.velocity = 0;
-        current_control_.curvature = 0;
-      }
+        if (j_turn_timer_ <= 0) {
+          current_control_.velocity = 0;
+          current_control_.curvature = 0;
+        }
+    }
   }
 
   PublishControl();
@@ -180,11 +183,11 @@ void Navigation::RunAutonomous() {
 
   past_controls_.push(current_control_);
 
-  cout << "CHOSE " << current_control_.curvature << endl << endl;
-
-  if (max_free_path < 0.8) {
-    state_ = State::RR;
-    j_turn_timer_ = FLRR_DURATION * HERTZ;
+  if (DO_JTURN) {
+    if (max_free_path < 0.8) {
+      state_ = State::RR;
+      j_turn_timer_ = FLRR_DURATION * HERTZ;
+    }
   }
 }
 
@@ -232,7 +235,7 @@ void Navigation::PublishVis() {
   //   visualization::DrawPoint(point, 0x5eeb34, local_viz_msg_);
   // }
 
-  // draw a box around where the car is
+  // draw a box around where the car is (including safety margin)
   // left side
   visualization::DrawLine(Vector2f( -1 * (LENGTH - WIDTH) / 2, WIDTH / 2 ),
                           Vector2f( (LENGTH + WIDTH) / 2, WIDTH / 2 ),
@@ -253,12 +256,6 @@ void Navigation::PublishVis() {
                           Vector2f( (LENGTH + WIDTH) / 2, WIDTH / 2 ),
                           0xff000d,
                           local_viz_msg_);
-
-  // // straight line showing where we will go (if we are going in a straight path)
-  // visualization::DrawLine(Vector2f( (LENGTH / 2) + (WIDTH / 2), 0 ),
-  //                         Vector2f( (LENGTH / 2) + (WIDTH / 2) + chosen_path.free_path_length, 0),
-  //                         0x0400ff,
-  //                         local_viz_msg_);
 
   // Publish messages.
   viz_pub_.publish(local_viz_msg_);
@@ -388,7 +385,6 @@ double Navigation::PointFreePath(const Vector2f& point, const Vector2f& turning_
     return 0; // keeps compiler from complaining that beta is uninitialized later
   }
 
-  // TODO: check on the theta values we create here
   abs_y = std::abs(point(1)); // absolute value of y
   if (point(0) > 0) {
     if (abs_y > turning_radius) {
@@ -417,7 +413,6 @@ bool Navigation::CollisionCheck(const Vector2f& point, const Vector2f& turning_c
 }
 
 double Navigation::FreePathLength(float proposed_curvature) {
-  // todo 
   if (proposed_curvature == 0) {
     return GoStraightFreePath();
   }
@@ -454,7 +449,6 @@ double Navigation::FreePathLength(float proposed_curvature) {
   return global_min_free_path;
 }
 
-// TODO: hacked this together super fast, may need edits
 double Navigation::CalculateClearance(float proposed_curvature) {
 
   float global_min = 10001.0;
@@ -499,9 +493,7 @@ float Navigation::GoStraightFreePath() {
   float new_length;
   float global_min = 10001.0;
   for(auto point : point_cloud_) {
-    // WE ADD IN EXTRA - TODO - MAY NEED TWEAK
     if (point(1) >= -1 * ((WIDTH / 2) + 0.01) && point(1) <= ((WIDTH / 2)+ 0.01)) {
-      // TODO MAY NEED TO INCLUDE THE LENGTH OF THE CAR IN THE NEW LENGTH - POTENTIAL BUG
       new_length = point(0) - ((LENGTH / 2) + (WHEELBASE / 2));
       global_min = std::min(global_min, new_length);
     }
