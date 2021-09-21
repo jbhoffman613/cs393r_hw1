@@ -61,6 +61,8 @@ using std::string;
 using std::vector;
 using Eigen::Vector2f;
 
+const float LIDAR_OFFSET = 0.205;
+
 // Create command line arguments
 DEFINE_string(laser_topic, "scan", "Name of ROS topic for LIDAR data");
 DEFINE_string(odom_topic, "odom", "Name of ROS topic for odometry data");
@@ -85,7 +87,7 @@ void LaserCallback(const sensor_msgs::LaserScan& msg) {
 
   static vector<Vector2f> point_cloud_;
   point_cloud_.clear();
-  // TODO Convert the LaserScan to a point cloud
+  // TODO Convert the LaserScan to a point cloud - DONE! 
 
   int num_measurements = (msg.angle_max - msg.angle_min) / msg.angle_increment + 1;
 
@@ -94,7 +96,7 @@ void LaserCallback(const sensor_msgs::LaserScan& msg) {
     float r = msg.ranges[i];
     float theta = msg.angle_min + msg.angle_increment * i;
 
-    Vector2f point(r*std::cos(theta), r*std::sin(theta));
+    Vector2f point(r*std::cos(theta) + LIDAR_OFFSET, r*std::sin(theta));
     point_cloud_.push_back(point);
   }
 

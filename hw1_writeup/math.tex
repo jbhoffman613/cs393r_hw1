@@ -1,0 +1,36 @@
+\section{Math questions}
+
+\subsection*{Question 1}
+The point on the car that traces an arc of maximum radius is the outer front corner.  Let $e = \frac{l - b}{2}$ be the distance from the front axel to the front edge of the car. This radius is $\sqrt{(r + \frac{w}{2}) + (e + b)^2}$.
+
+It is possible that if the back of the car extends out far beyond the rear axel, the end of the car could trace a larger radius. However, for the purposes of this question and in our implementation, we assume this is not the case and that the distance from the rear axel to the back end of the car is small enough that this does not happen.
+
+\subsection*{Question 2}
+
+The point on the car that traces an arc of minimum radius is the point on the inner side of the car where the turning radius intersects with the car. The radius to this point is $r - \frac{w}{2}$.
+
+\subsection*{Question 3}
+Point $p$ will hit the car on the inner side of the car as the car drives forward if the distance between $p$ and the center of turning is between the radius traced by the point described in Question 2, given by $r_s = \frac{w}{2}$, and the radius traced by the inner front corner of the car, given by $r_m = \sqrt{(l + w)^2 + (\frac{w}{2})^2}$. The distance from $p$ to the center of the turn is $\sqrt{(r - y)^2 + x^2}$, so $p$ will hit the inner side of the car when $r_s < \sqrt{(r - y)^2 + x^2} < r_m$.
+
+\subsection*{Question 4}
+Point $p$ will hit the front of the car as the car drive forward if $p$ sits between the radius traced by the inner front corner and the radius traced by the outer front corner. The radius traced by the inner front corner is $r_m = \sqrt{(l + w)^2 + (\frac{w}{2})^2}$ and the radius traced by the outer front corner is $r_\ell = \sqrt{(r + \frac{w}{2}) + (e + b)^2}$. $p$ will hit the front of the car when $r_m <  \sqrt{(r - y)^2 + x^2} < r_\ell$. Here, $x, y$ is the center of turning. 
+
+\subsection*{Question 5}
+Under the assumptions stated above, $p$ will never hit the car on the outer side as the car drives forward. The largest radius traced by any point on the car is traced by the outer front corner, which means that any point that is going to hit the car would hit the front of the car at that corner before it could hit the outer side.
+
+\subsection*{Question 6}
+The maximum free path that the car can drive before hitting $p$ depends on whether $p$ will hit the car's inner or front side.
+
+\noindent
+\textbf{If $p$ will hit the front of the car:} When $p$ hits the car, there is a right triangle with one leg starting at the center of the turn and ending at the base\_link of the car with length $r$, and the other leg parallel to the wheelbase ending at $p$ with length $\frac{l + b}{2}$. Let $r'$ be the distance from $p$ to the center of the turn. Let $\beta = \arcsin(\frac{\frac{l + b}{2}} {r'})$, i.e., the angle at the vertex of the triangle that is on the center of the turn. This triangle is similar to a triangle constructed in the same way at the initial position of the car. 
+
+Call $\theta$ the angle between the initial position of base\_link and the position of base\_link when the car hit $p$. We'd like to find $\alpha = \theta - \beta$, as this $\alpha$ angle will give us the angle of the actual turn the car will make before hitting $p$, from which we can obtain the free path length. $\theta$ is known - we can calculate it based on the relative position of $p$ to the center of the turn. 
+
+Then, $\alpha = \theta - \beta$ gives the angle of the turn that the car actually completes before hitting $p$. The length of this arc (the free path length) is $r\alpha$.
+
+\noindent
+\textbf{If $p$ will hit the side of the car:} This approach is roughly the same as if $p$ hits the front of the car, except that $\beta$ is calculated differently. This time, we consider a right triangle constructed with a hypotenuse starting at the center of the turn and ending at $p$ with length $r'$, and one leg starting at the center of the turn and ending at the point described in question 2 with length $r - \frac{w}{2}$. Then, $\beta = \arccos(\frac{r-\frac{w}{2}}{r'})$. We find $\theta$ and $\alpha$ in the same way as in the other case, and the free path length is again $r\alpha$.
+
+\subsection*{Question 7}
+
+We derive the minimum stopping distance from one of the four fundamental kinematic equations: $v_f^2 = v_i^2 = 2ad$ where $v_f$ is the final velocity, $v_i$ is the current velocity, $a$ is acceleration (which is negative here, since we are decelerating), and $d$ is distance. We know that we are decelerating to 0, so we set $v_f = 0$. We simplify to $d = -\frac{v^2}{2a}$ to obtain the minimum stopping distance $d$.
